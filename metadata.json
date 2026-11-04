@@ -1,0 +1,6 @@
+{
+  "name": "PKKMMTSSUKA26 - Portal Madrasah",
+  "description": "Aplikasi portal informasi, administrasi, dan dokumentasi kegiatan madrasah berbasis Google Apps Script, Google Spreadsheet, dan Google Drive.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -98,6 +98,7 @@ export default function App() {
         menus={menus}
         onBackToPortal={handleBackToDashboard}
         onRefresh={refreshData}
+        onOpenGasHub={() => setCurrentView('gas_hub')}
       />
     );
   }

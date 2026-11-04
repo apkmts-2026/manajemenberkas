@@ -336,7 +336,7 @@ class StorageService {
     return cleaned;
   }
 
-  async testGASConnection(rawUrl: string): Promise<{ success: boolean; message: string; autoFixedUrl?: string; data?: any }> {
+  async testGASConnection(rawUrl: string): Promise<{ success: boolean; message: string; autoFixedUrl?: string; data?: any; errorCode?: string; detail?: string }> {
     if (!rawUrl || !rawUrl.trim()) {
       return { success: false, message: 'URL Web App tidak boleh kosong.' };
     }
@@ -344,6 +344,25 @@ class StorageService {
     const url = this.sanitizeGASUrl(rawUrl);
     const wasFixed = url !== rawUrl.trim();
 
+    // 1. Coba lewat proxy internal diagnostik terlebih dahulu (mampu membaca detail pesan error dari Google tanpa terhalang CORS)
+    try {
+      const proxyRes = await fetch(`/api/test-gas?url=${encodeURIComponent(url)}`);
+      if (proxyRes.ok) {
+        const diag = await proxyRes.json();
+        return {
+          success: diag.success,
+          message: diag.message,
+          errorCode: diag.errorCode,
+          detail: diag.detail,
+          autoFixedUrl: wasFixed ? url : undefined,
+          data: diag.data
+        };
+      }
+    } catch {
+      // Fallback ke direct fetch jika proxy tidak tersedia
+    }
+
+    // 2. Direct browser fetch fallback
     try {
       const endpoint = url + (url.includes('?') ? '&' : '?') + 'action=get_data';
       const res = await fetch(endpoint, { method: 'GET' });
@@ -352,12 +371,14 @@ class StorageService {
         if (res.status === 404) {
           return { 
             success: false, 
+            errorCode: 'HTTP_404',
             message: 'Error 404: Web App tidak ditemukan. Pastikan saat Deploy memilih tipe "Web app" (Aplikasi Web), bukan Library/API, dan URL berakhiran /exec.',
             autoFixedUrl: wasFixed ? url : undefined
           };
         }
         return { 
           success: false, 
+          errorCode: `HTTP_${res.status}`,
           message: `Gagal menghubungi server Google (Status HTTP: ${res.status})`,
           autoFixedUrl: wasFixed ? url : undefined
         };
@@ -368,8 +389,17 @@ class StorageService {
       try {
         data = JSON.parse(text);
       } catch {
+        if (text.includes('Script function not found: doGet')) {
+          return {
+            success: false,
+            errorCode: 'FUNCTION_NOT_FOUND_DOGET',
+            message: "Google Apps Script merespons: 'Script function not found: doGet'. File Code.gs belum tersimpan di Apps Script atau Anda belum membuat Deployment Baru.",
+            autoFixedUrl: wasFixed ? url : undefined
+          };
+        }
         return {
           success: false,
+          errorCode: 'INVALID_RESPONSE',
           message: 'Server Google merespons tetapi bukan format JSON data. Kemungkinan kode Code.gs belum ditempel di Apps Script, atau terjadi error script.',
           autoFixedUrl: wasFixed ? url : undefined
         };
@@ -385,13 +415,15 @@ class StorageService {
       }
       return { 
         success: false, 
+        errorCode: 'GAS_ERROR',
         message: data.error || 'Server Apps Script merespons gagal. Periksa ID Spreadsheet di Config.gs.',
         autoFixedUrl: wasFixed ? url : undefined
       };
     } catch (err: any) {
       return { 
         success: false, 
-        message: 'Tidak dapat menjangkau URL. Kemungkinan penyebab: 1) Akhiran URL belum /exec, 2) Akses di Apps Script belum diset "Anyone" (Siapa saja), atau 3) Kode Code.gs belum tersimpan di Apps Script.',
+        errorCode: 'NETWORK_ERROR',
+        message: 'Tidak dapat menjangkau URL. Kemungkinan penyebab: 1) Fungsi doGet() belum tersimpan di Apps Script, 2) Akhiran URL belum /exec, atau 3) Akses di Apps Script belum diset "Anyone" (Siapa saja).',
         autoFixedUrl: wasFixed ? url : undefined
       };
     }

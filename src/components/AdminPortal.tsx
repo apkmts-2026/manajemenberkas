@@ -31,26 +31,31 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Copy,
+  FileCode
 } from 'lucide-react';
 import { MenuItem, AppSettings, DriveFile, AdminUser, AuditLog, MenuType, OpenMode } from '../types';
 import { storage } from '../services/storage';
 import { renderIcon, AVAILABLE_ICONS } from '../utils/iconMap';
 import { exportPortalSummaryToPdf } from '../utils/pdfExport';
 import { MADRASAH_LOGO_SVG } from '../data/defaultData';
+import { GAS_TEMPLATES } from '../data/gasTemplates';
 
 interface AdminPortalProps {
   settings: AppSettings;
   menus: MenuItem[];
   onBackToPortal: () => void;
   onRefresh: () => void;
+  onOpenGasHub?: () => void;
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({
   settings,
   menus,
   onBackToPortal,
-  onRefresh
+  onRefresh,
+  onOpenGasHub
 }) => {
   const [currentAdmin, setCurrentAdmin] = useState<AdminUser | null>(() => storage.getCurrentAdmin());
   const [activeTab, setActiveTab] = useState<'overview' | 'menus' | 'identity' | 'drive' | 'users' | 'logs' | 'notifications' | 'gas_conn'>('menus');
@@ -95,7 +100,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [spreadsheetId, setSpreadsheetId] = useState(settings.spreadsheet_id || '');
   const [driveRootId, setDriveRootId] = useState(settings.drive_root_folder_id || '');
   const [isTestingSync, setIsTestingSync] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; autoFixedUrl?: string } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ 
+    success: boolean; 
+    message: string; 
+    autoFixedUrl?: string; 
+    errorCode?: string; 
+    detail?: string 
+  } | null>(null);
+  const [copiedCodeSnippet, setCopiedCodeSnippet] = useState<string | null>(null);
   const [showDetailedGuide, setShowDetailedGuide] = useState(true);
 
   // Toast
@@ -104,6 +116,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handleCopyGasCode = (fileName: string) => {
+    let code = '';
+    if (fileName === 'Code.gs') {
+      code = GAS_TEMPLATES[0]?.code || '';
+    } else if (fileName === 'Config.gs') {
+      const activeSheetId = spreadsheetId.trim() || '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc';
+      const activeFolderId = driveRootId.trim() || '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO';
+      code = (GAS_TEMPLATES[1]?.code || '')
+        .replace("'YOUR_SPREADSHEET_ID_HERE'", `'${activeSheetId}'`)
+        .replace("'YOUR_DRIVE_FOLDER_ID_HERE'", `'${activeFolderId}'`);
+    }
+    if (code) {
+      navigator.clipboard.writeText(code).then(() => {
+        setCopiedCodeSnippet(fileName);
+        showToast(`Kode ${fileName} berhasil disalin ke clipboard!`);
+        setTimeout(() => setCopiedCodeSnippet(null), 3000);
+      });
+    }
   };
 
   const processImageUpload = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
@@ -1133,8 +1165,73 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     </div>
                   </div>
 
-                  {/* Panduan Pemecahan Masalah Khusus Jika Gagal */}
-                  {!syncResult.success && (
+                  {/* KARTU SOLUSI SPESIFIK JIKA ERROR: Script function not found: doGet */}
+                  {(syncResult.errorCode === 'FUNCTION_NOT_FOUND_DOGET' || syncResult.message.includes('doGet')) && (
+                    <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-300 text-xs text-amber-950 shadow-sm space-y-3">
+                      <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                        <span>Penyebab Utama & Solusi Cepat: "Script function not found: doGet"</span>
+                      </div>
+
+                      <div className="text-[11px] leading-relaxed text-amber-900/90">
+                        URL Web App Anda <strong>sudah terhubung ke server Google</strong> (tidak 404). Namun di proyek Apps Script madrasah Anda, fungsi <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-amber-900">doGet()</code> belum ada di file <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-amber-900">Code.gs</code> atau Anda belum membuat <strong>Deployment Baru</strong> setelah menyimpan kode.
+                      </div>
+
+                      {/* Tombol Salin Cepat */}
+                      <div className="pt-1 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyGasCode('Code.gs')}
+                          className="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer text-xs"
+                        >
+                          {copiedCodeSnippet === 'Code.gs' ? (
+                            <Check className="w-4 h-4 text-emerald-300" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                          <span>{copiedCodeSnippet === 'Code.gs' ? 'Tersalin!' : '1. Salin Kode Code.gs'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopyGasCode('Config.gs')}
+                          className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer text-xs"
+                        >
+                          {copiedCodeSnippet === 'Config.gs' ? (
+                            <Check className="w-4 h-4 text-emerald-300" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                          <span>{copiedCodeSnippet === 'Config.gs' ? 'Tersalin!' : '2. Salin Kode Config.gs (Otomatis ID Anda)'}</span>
+                        </button>
+
+                        {onOpenGasHub && (
+                          <button
+                            type="button"
+                            onClick={onOpenGasHub}
+                            className="px-3.5 py-2 bg-white hover:bg-gray-100 text-emerald-900 font-bold border border-emerald-300 rounded-xl flex items-center gap-1.5 transition-all text-xs"
+                          >
+                            <FileCode className="w-4 h-4 text-emerald-700" />
+                            <span>Lihat Semua 14 File GAS</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Langkah Praktis */}
+                      <div className="bg-white/80 p-3 rounded-xl border border-amber-200 text-[11px] space-y-1.5 text-gray-800">
+                        <div className="font-bold text-amber-950 mb-1">Langkah 2 Menit di Editor Apps Script:</div>
+                        <p>1. Buka tab Google Apps Script Anda (tempat Anda membuat project).</p>
+                        <p>2. Klik file <strong className="font-mono text-emerald-800">Code.gs</strong>, hapus semua isinya (misal <code>function myFunction() &#123;&#125;</code>), lalu <strong>Paste</strong> kode yang baru Anda salin dari tombol di atas.</p>
+                        <p>3. Klik tanda <strong className="font-mono text-emerald-800">+</strong> di sebelah Files &rarr; pilih <strong>Script</strong>, beri nama <strong className="font-mono text-emerald-800">Config.gs</strong>, lalu <strong>Paste</strong> kode dari tombol Config.gs.</p>
+                        <p>4. Tekan <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded font-mono">Ctrl + S</kbd> untuk menyimpan.</p>
+                        <p>5. <strong>PENTING:</strong> Klik tombol biru <strong>Deploy (Terapkan) &rarr; New deployment (Penerapan baru)</strong>. Pilih tipe <em>Web app</em>, <em>Execute as: Me</em>, <em>Who has access: Anyone</em>, lalu klik <strong>Deploy</strong>.</p>
+                        <p>6. Salin URL baru yang muncul dan tempelkan ke kolom URL di atas, lalu klik <strong>Uji & Sinkron</strong>.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Panduan Umum Jika Bukan Error doGet */}
+                  {!syncResult.success && syncResult.errorCode !== 'FUNCTION_NOT_FOUND_DOGET' && !syncResult.message.includes('doGet') && (
                     <div className="p-4 bg-amber-50/80 rounded-2xl border border-amber-200 text-xs text-amber-950">
                       <div className="font-bold text-sm text-amber-900 mb-2 flex items-center gap-1.5">
                         <Shield className="w-4 h-4 text-amber-700" />

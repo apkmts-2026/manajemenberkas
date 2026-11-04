@@ -33,14 +33,16 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   Copy,
-  FileCode
+  FileCode,
+  Download,
+  Code2
 } from 'lucide-react';
 import { MenuItem, AppSettings, DriveFile, AdminUser, AuditLog, MenuType, OpenMode } from '../types';
 import { storage } from '../services/storage';
 import { renderIcon, AVAILABLE_ICONS } from '../utils/iconMap';
 import { exportPortalSummaryToPdf } from '../utils/pdfExport';
 import { MADRASAH_LOGO_SVG } from '../data/defaultData';
-import { GAS_TEMPLATES } from '../data/gasTemplates';
+import { GAS_TEMPLATES, getCombinedGasBackendCode, getModularGasCode } from '../data/gasTemplates';
 
 interface AdminPortalProps {
   settings: AppSettings;
@@ -58,7 +60,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onOpenGasHub
 }) => {
   const [currentAdmin, setCurrentAdmin] = useState<AdminUser | null>(() => storage.getCurrentAdmin());
-  const [activeTab, setActiveTab] = useState<'overview' | 'menus' | 'identity' | 'drive' | 'users' | 'logs' | 'notifications' | 'gas_conn'>('menus');
+  const [activeTab, setActiveTab] = useState<'overview' | 'menus' | 'identity' | 'drive' | 'users' | 'logs' | 'notifications' | 'gas_conn' | 'gas_code'>('menus');
+  const [gasCodeMode, setGasCodeMode] = useState<'combined' | 'modular'>('combined');
+  const [selectedModularFileName, setSelectedModularFileName] = useState('Code.gs');
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('admin@madrasah.sch.id');
@@ -118,24 +122,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const handleCopyGasCode = (fileName: string) => {
+  const handleCopyGasCode = (target: string) => {
     let code = '';
-    if (fileName === 'Code.gs') {
-      code = GAS_TEMPLATES[0]?.code || '';
-    } else if (fileName === 'Config.gs') {
-      const activeSheetId = spreadsheetId.trim() || '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc';
-      const activeFolderId = driveRootId.trim() || '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO';
-      code = (GAS_TEMPLATES[1]?.code || '')
-        .replace("'YOUR_SPREADSHEET_ID_HERE'", `'${activeSheetId}'`)
-        .replace("'YOUR_DRIVE_FOLDER_ID_HERE'", `'${activeFolderId}'`);
+    const activeSheetId = spreadsheetId.trim() || '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc';
+    const activeFolderId = driveRootId.trim() || '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO';
+
+    if (target === 'combined') {
+      code = getCombinedGasBackendCode(activeSheetId, activeFolderId);
+    } else {
+      code = getModularGasCode(target, activeSheetId, activeFolderId);
+      if (!code) {
+        const found = GAS_TEMPLATES.find(t => t.name === target);
+        code = found?.code || '';
+      }
     }
+
     if (code) {
       navigator.clipboard.writeText(code).then(() => {
-        setCopiedCodeSnippet(fileName);
-        showToast(`Kode ${fileName} berhasil disalin ke clipboard!`);
+        setCopiedCodeSnippet(target);
+        showToast(`Kode ${target === 'combined' ? 'Lengkap (1 File Code.gs)' : target} berhasil disalin ke clipboard!`);
         setTimeout(() => setCopiedCodeSnippet(null), 3000);
       });
     }
+  };
+
+  const handleDownloadGasFile = (fileName: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`File ${fileName} berhasil diunduh!`);
   };
 
   const processImageUpload = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
@@ -537,6 +556,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             { id: 'identity', label: 'Identitas & Desain', icon: Palette },
             { id: 'drive', label: 'File Google Drive', icon: Folder },
             { id: 'gas_conn', label: 'Multi-Perangkat & Drive Sync', icon: Database },
+            { id: 'gas_code', label: 'Kode Apps Script (Code.gs)', icon: FileCode },
             { id: 'notifications', label: 'Notifikasi & Laporan PDF', icon: Mail },
             { id: 'users', label: 'Akun Admin', icon: Users },
             { id: 'logs', label: 'Log Aktivitas', icon: History }
@@ -1014,6 +1034,48 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </ul>
             </div>
 
+            {/* Kartu Panduan Cepat & Akses Langsung Code.gs */}
+            <div className="bg-gradient-to-br from-emerald-900 to-[#1b4332] text-white rounded-2xl p-4 sm:p-5 mb-5 shadow-sm border border-emerald-700/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-400 text-emerald-950 text-[10px] font-black uppercase tracking-wider">
+                    Langkah 1: Wajib Pasang di script.google.com
+                  </span>
+                </div>
+                <h3 className="font-heading font-extrabold text-base text-white flex items-center gap-2">
+                  <FileCode className="w-5 h-5 text-emerald-300 shrink-0" />
+                  <span>Di mana mengambil kode Code.gs?</span>
+                </h3>
+                <p className="text-xs text-emerald-100/90 leading-relaxed max-w-xl">
+                  Kode backend sudah disiapkan lengkap di dalam aplikasi ini dan otomatis terisi ID Spreadsheet &amp; Drive Anda. Cukup salin 1 file <strong>Code.gs</strong>, tempelkan di editor Google Apps Script Anda, lalu klik <strong>Deploy &rarr; New deployment</strong>.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCopyGasCode('combined')}
+                  className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  {copiedCodeSnippet === 'combined' ? (
+                    <Check className="w-4 h-4 text-emerald-950" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-emerald-950" />
+                  )}
+                  <span>{copiedCodeSnippet === 'combined' ? 'Tersalin!' : 'Salin 1 File Code.gs Lengkap'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('gas_code')}
+                  className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/20"
+                >
+                  <Eye className="w-4 h-4 text-emerald-300" />
+                  <span>Buka Tab Kode &amp; Panduan</span>
+                </button>
+              </div>
+            </div>
+
             {/* Form Konfigurasi Sinkronisasi */}
             <form onSubmit={handleTestAndSaveSync} className="space-y-5">
               {/* Field 1: URL Web App */}
@@ -1295,6 +1357,232 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
         )}
+
+        {/* TAB KHUSUS: PUSAT KODE APPS SCRIPT (CODE.GS) */}
+        {activeTab === 'gas_code' && (() => {
+          const activeSheetId = spreadsheetId.trim() || '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc';
+          const activeFolderId = driveRootId.trim() || '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO';
+          const displayCode = gasCodeMode === 'combined'
+            ? getCombinedGasBackendCode(activeSheetId, activeFolderId)
+            : getModularGasCode(selectedModularFileName, activeSheetId, activeFolderId) || (GAS_TEMPLATES.find(t => t.name === selectedModularFileName)?.code || '');
+          const lineCount = displayCode.split('\n').length;
+          const displayFileName = gasCodeMode === 'combined' ? 'Code.gs (All-in-One)' : selectedModularFileName;
+
+          const modularFiles = [
+            'Code.gs',
+            'Config.gs',
+            'Database.gs',
+            'MenuService.gs',
+            'DriveService.gs',
+            'Auth.gs',
+            'SettingsService.gs',
+            'AuditService.gs'
+          ];
+
+          return (
+            <div className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm border border-gray-200 max-w-5xl space-y-6">
+              {/* Header Tab */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-[#1b4332] flex items-center justify-center shrink-0">
+                    <FileCode className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        Pusat Kode Sumber Backend
+                      </span>
+                      <span className="text-[11px] text-gray-500">Google Apps Script</span>
+                    </div>
+                    <h2 className="font-heading font-extrabold text-xl text-gray-900 mt-0.5">
+                      Kode Google Apps Script (Code.gs)
+                    </h2>
+                    <p className="text-xs text-gray-500">
+                      Salin kode ini dan tempelkan ke editor Google Apps Script di <strong className="text-emerald-800">script.google.com</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href="https://script.google.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all"
+                  >
+                    <span>Buka script.google.com</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyGasCode(gasCodeMode === 'combined' ? 'combined' : selectedModularFileName)}
+                    className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    {copiedCodeSnippet ? (
+                      <Check className="w-4 h-4 text-emerald-300" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                    <span>{copiedCodeSnippet ? 'Kode Tersalin!' : 'Salin Kode Ini'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Mode Pilihan: All-in-One vs Modular */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-xs text-emerald-950">
+                  <span className="font-bold">Format Kode:</span> Pilih cara yang paling mudah untuk Anda pasang di Google Apps Script.
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGasCodeMode('combined')}
+                    className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      gasCodeMode === 'combined'
+                        ? 'bg-[#1b4332] text-white shadow-xs'
+                        : 'bg-white text-gray-700 hover:bg-emerald-100/50 border border-gray-200'
+                    }`}
+                  >
+                    ⚡ 1 File Code.gs (Rekomendasi - Paling Mudah)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGasCodeMode('modular')}
+                    className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      gasCodeMode === 'modular'
+                        ? 'bg-[#1b4332] text-white shadow-xs'
+                        : 'bg-white text-gray-700 hover:bg-emerald-100/50 border border-gray-200'
+                    }`}
+                  >
+                    📁 File Terpisah (Modular)
+                  </button>
+                </div>
+              </div>
+
+              {/* Jika Mode Modular: Tampilkan Tab File */}
+              {gasCodeMode === 'modular' && (
+                <div className="flex flex-wrap gap-1.5 p-2 bg-gray-50 rounded-2xl border border-gray-200">
+                  {modularFiles.map((fn) => (
+                    <button
+                      key={fn}
+                      type="button"
+                      onClick={() => setSelectedModularFileName(fn)}
+                      className={`px-3 py-1.5 text-xs font-mono font-bold rounded-xl transition-all cursor-pointer ${
+                        selectedModularFileName === fn
+                          ? 'bg-emerald-800 text-white shadow-xs'
+                          : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                      }`}
+                    >
+                      {fn}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Kotak Tampilan Kode */}
+              <div className="rounded-2xl border border-gray-800 bg-[#0f172a] text-slate-100 overflow-hidden shadow-lg">
+                {/* Bar Atas Editor Kode */}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+                    <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+                    <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+                    <span className="ml-2 font-mono font-bold text-emerald-400">
+                      {displayFileName}
+                    </span>
+                    <span className="text-[11px] text-slate-400 hidden sm:inline">
+                      • {lineCount} baris
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyGasCode(gasCodeMode === 'combined' ? 'combined' : selectedModularFileName)}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      {copiedCodeSnippet ? (
+                        <Check className="w-3.5 h-3.5 text-white" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-white" />
+                      )}
+                      <span>{copiedCodeSnippet ? 'Tersalin!' : 'Salin'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadGasFile(displayFileName, displayCode)}
+                      className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-300" />
+                      <span className="hidden sm:inline">Unduh</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Pre Tag Isi Kode */}
+                <pre className="p-4 text-xs font-mono text-emerald-300/90 overflow-x-auto max-h-96 leading-relaxed select-all no-scrollbar">
+                  <code>{displayCode}</code>
+                </pre>
+              </div>
+
+              {/* Panduan Langkah demi Langkah */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
+                <h4 className="font-heading font-extrabold text-sm text-gray-900 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                  <span>Cara Pasang di Google Apps Script (Hanya 3 Langkah Mudah):</span>
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-700">
+                  <div className="bg-white p-3.5 rounded-xl border border-gray-200 space-y-1">
+                    <div className="font-bold text-emerald-900">1. Buka script.google.com</div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                      Buka <a href="https://script.google.com" target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline font-semibold">script.google.com</a>, buat proyek baru atau buka proyek yang sudah ada.
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-gray-200 space-y-1">
+                    <div className="font-bold text-emerald-900">2. Tempel Kode di Code.gs</div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                      Klik file <strong>Code.gs</strong>, hapus isi default (<code className="text-gray-800 bg-gray-100 px-1 rounded">myFunction</code>), lalu <strong>Paste</strong> seluruh kode di atas. Tekan <kbd className="bg-gray-100 px-1 border rounded">Ctrl + S</kbd>.
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-gray-200 space-y-1">
+                    <div className="font-bold text-emerald-900">3. Deploy sebagai Web App</div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                      Klik tombol biru <strong>Deploy &rarr; New deployment</strong>. Pilih tipe <strong>Web app</strong>, ubah <strong>Who has access: Anyone</strong>, lalu klik Deploy.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <strong>PENTING:</strong> Setelah klik <em>Deploy</em>, salin URL yang berakhiran <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold">/exec</code> lalu masukkan ke tab <strong>Multi-Perangkat &amp; Drive Sync</strong> dan klik <strong>Uji &amp; Sinkron</strong>. Maka status error tidak akan muncul lagi!
+                  </div>
+                </div>
+              </div>
+
+              {/* Tombol ke GAS Hub Lengkap 14 File */}
+              {onOpenGasHub && (
+                <div className="pt-2 flex justify-between items-center text-xs">
+                  <span className="text-gray-500">
+                    Ingin melihat struktur lengkap 14 file Google Apps Script (HTML, CSS, Modul)?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onOpenGasHub}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Code2 className="w-4 h-4 text-emerald-400" />
+                    <span>Buka Pusat Lengkap 14 File GAS</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* TAB 4: NOTIFIKASI & PDF */}
         {activeTab === 'notifications' && (

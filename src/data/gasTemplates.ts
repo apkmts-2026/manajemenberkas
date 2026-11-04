@@ -1904,3 +1904,70 @@ export function getBootstrapIconClass(iconName: string): string {
   };
   return map[iconName] || 'bi-folder-fill';
 }
+
+/**
+ * Menghasilkan satu file Code.gs gabungan yang memuat seluruh backend logic
+ * (Config, Routing doGet/doPost, Database auto-init, Menu, Drive, Auth, Settings, Audit).
+ * Sehingga pengguna cukup copy-paste 1 file saja ke Google Apps Script tanpa ribet membuat banyak file.
+ */
+export function getCombinedGasBackendCode(
+  spreadsheetId = '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc',
+  driveRootId = '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO'
+): string {
+  const effectiveSheetId = spreadsheetId.trim() || '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc';
+  const effectiveDriveId = driveRootId.trim() || '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO';
+
+  const gsTemplates = GAS_TEMPLATES.filter(t => t.type === 'gs');
+
+  const banner = `/**
+ * ============================================================================
+ * PKKMMTSSUKA26 - GOOGLE APPS SCRIPT BACKEND (ALL-IN-ONE SINGLE FILE CODE.GS)
+ * Aplikasi: PKKMMTSSUKA26 - Pendidikan Berbasis Pesantren
+ * 
+ * PETUNJUK PEMASANGAN DI SCRIPT.GOOGLE.COM:
+ * 1. Buka editor Google Apps Script Anda.
+ * 2. Klik file "Code.gs" di sisi kiri, HAPUS SEMUA ISINYA (misal myFunction).
+ * 3. TEMPEL (PASTE) SELURUH KODE DI BAWAH INI.
+ * 4. Tekan Ctrl+S (Simpan).
+ * 5. Klik Deploy -> New deployment -> Tipe: Web app.
+ *    - Execute as: Me
+ *    - Who has access: Anyone (Siapa saja)
+ * 6. Klik Deploy dan salin URL Web App yang berakhiran /exec ke dalam aplikasi!
+ * ============================================================================
+ */\n\n`;
+
+  const mergedCode = gsTemplates.map(t => {
+    let code = t.code;
+    if (t.name === 'Config.gs') {
+      code = code
+        .replace("'YOUR_SPREADSHEET_ID_HERE'", `'${effectiveSheetId}'`)
+        .replace("'YOUR_DRIVE_FOLDER_ID_HERE'", `'${effectiveDriveId}'`);
+    }
+    return `// ============================================================================\n// MODUL: ${t.name} - ${t.description}\n// ============================================================================\n${code}`;
+  }).join('\n\n\n');
+
+  return banner + mergedCode;
+}
+
+/**
+ * Menghasilkan kode per file individual dengan ID yang sudah diganti otomatis
+ */
+export function getModularGasCode(
+  fileName: string,
+  spreadsheetId = '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc',
+  driveRootId = '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO'
+): string {
+  const template = GAS_TEMPLATES.find(t => t.name === fileName);
+  if (!template) return '';
+
+  let code = template.code;
+  if (fileName === 'Config.gs') {
+    const effectiveSheetId = spreadsheetId.trim() || '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc';
+    const effectiveDriveId = driveRootId.trim() || '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO';
+    code = code
+      .replace("'YOUR_SPREADSHEET_ID_HERE'", `'${effectiveSheetId}'`)
+      .replace("'YOUR_DRIVE_FOLDER_ID_HERE'", `'${effectiveDriveId}'`);
+  }
+  return code;
+}
+

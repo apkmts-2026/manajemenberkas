@@ -317,30 +317,82 @@ class StorageService {
     };
   }
 
-  async testGASConnection(url: string): Promise<{ success: boolean; message: string; data?: any }> {
-    if (!url || !url.trim().startsWith('http')) {
-      return { success: false, message: 'URL Web App tidak valid. Harus dimulai dengan https://' };
+  // Auto-clean & format Google Apps Script Web App URL
+  sanitizeGASUrl(url: string): string {
+    if (!url) return '';
+    let cleaned = url.trim();
+    // If user only pasted the deployment ID (e.g. AKfycbx...)
+    if (/^AKfy[a-zA-Z0-9_-]{20,}$/.test(cleaned)) {
+      return `https://script.google.com/macros/s/${cleaned}/exec`;
+    }
+    // If it's a macros/s URL missing /exec
+    if (cleaned.includes('script.google.com/macros/s/')) {
+      // Remove trailing slash or spaces
+      cleaned = cleaned.replace(/\/+$/, '');
+      if (!cleaned.endsWith('/exec') && !cleaned.endsWith('/dev')) {
+        cleaned += '/exec';
+      }
+    }
+    return cleaned;
+  }
+
+  async testGASConnection(rawUrl: string): Promise<{ success: boolean; message: string; autoFixedUrl?: string; data?: any }> {
+    if (!rawUrl || !rawUrl.trim()) {
+      return { success: false, message: 'URL Web App tidak boleh kosong.' };
     }
 
+    const url = this.sanitizeGASUrl(rawUrl);
+    const wasFixed = url !== rawUrl.trim();
+
     try {
-      const endpoint = url.trim() + (url.includes('?') ? '&' : '?') + 'action=get_data';
+      const endpoint = url + (url.includes('?') ? '&' : '?') + 'action=get_data';
       const res = await fetch(endpoint, { method: 'GET' });
+      
       if (!res.ok) {
-        return { success: false, message: `Gagal menghubungi server (Status: ${res.status})` };
+        if (res.status === 404) {
+          return { 
+            success: false, 
+            message: 'Error 404: Web App tidak ditemukan. Pastikan saat Deploy memilih tipe "Web app" (Aplikasi Web), bukan Library/API, dan URL berakhiran /exec.',
+            autoFixedUrl: wasFixed ? url : undefined
+          };
+        }
+        return { 
+          success: false, 
+          message: `Gagal menghubungi server Google (Status HTTP: ${res.status})`,
+          autoFixedUrl: wasFixed ? url : undefined
+        };
       }
-      const data = await res.json();
+
+      const text = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return {
+          success: false,
+          message: 'Server Google merespons tetapi bukan format JSON data. Kemungkinan kode Code.gs belum ditempel di Apps Script, atau terjadi error script.',
+          autoFixedUrl: wasFixed ? url : undefined
+        };
+      }
+
       if (data && data.success) {
         return { 
           success: true, 
-          message: `Koneksi Berhasil! Terhubung dengan Google Spreadsheet & Drive (${data.menus ? data.menus.length : 0} menu)`,
+          message: `Koneksi Berhasil! Terhubung dengan Google Apps Script & Spreadsheet (${data.menus ? data.menus.length : 0} menu aktif).`,
+          autoFixedUrl: wasFixed ? url : undefined,
           data 
         };
       }
-      return { success: false, message: data.error || 'Server merespons tetapi data tidak valid' };
+      return { 
+        success: false, 
+        message: data.error || 'Server Apps Script merespons gagal. Periksa ID Spreadsheet di Config.gs.',
+        autoFixedUrl: wasFixed ? url : undefined
+      };
     } catch (err: any) {
       return { 
         success: false, 
-        message: 'Tidak dapat menjangkau URL. Pastikan deployment Web App diset ke "Anyone" (Siapa saja).' 
+        message: 'Tidak dapat menjangkau URL. Kemungkinan penyebab: 1) Akhiran URL belum /exec, 2) Akses di Apps Script belum diset "Anyone" (Siapa saja), atau 3) Kode Code.gs belum tersimpan di Apps Script.',
+        autoFixedUrl: wasFixed ? url : undefined
       };
     }
   }
@@ -357,11 +409,12 @@ class StorageService {
     this.notifyListeners();
 
     try {
-      const endpoint = settings.gas_web_app_url.trim() + (settings.gas_web_app_url.includes('?') ? '&' : '?') + 'action=get_data';
+      const url = this.sanitizeGASUrl(settings.gas_web_app_url);
+      const endpoint = url + (url.includes('?') ? '&' : '?') + 'action=get_data';
       const res = await fetch(endpoint);
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
+        if (data && data.success) {
           if (data.menus && Array.isArray(data.menus)) {
             localStorage.setItem(STORAGE_KEYS.MENUS, JSON.stringify(data.menus));
           }

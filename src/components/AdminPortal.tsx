@@ -95,7 +95,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [spreadsheetId, setSpreadsheetId] = useState(settings.spreadsheet_id || '');
   const [driveRootId, setDriveRootId] = useState(settings.drive_root_folder_id || '');
   const [isTestingSync, setIsTestingSync] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; autoFixedUrl?: string } | null>(null);
+  const [showDetailedGuide, setShowDetailedGuide] = useState(true);
 
   // Toast
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -982,18 +983,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
 
             {/* Form Konfigurasi Sinkronisasi */}
-            <form onSubmit={handleTestAndSaveSync} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  URL Web App Google Apps Script (GAS)
-                </label>
-                <div className="flex gap-2">
+            <form onSubmit={handleTestAndSaveSync} className="space-y-5">
+              {/* Field 1: URL Web App */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-gray-200">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-gray-800">
+                    1. URL Web App Google Apps Script (GAS) <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                    Jembatan Multi-Perangkat
+                  </span>
+                </div>
+                <div className="text-[11px] text-gray-500 mb-2 leading-relaxed">
+                  URL ini didapat dari proyek Apps Script Anda melalui tombol <strong>Deploy (Terapkan) &rarr; New deployment &rarr; Web app</strong>.
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="url"
                     placeholder="https://script.google.com/macros/s/AKfycbx.../exec"
                     value={gasUrl}
                     onChange={(e) => setGasUrl(e.target.value)}
-                    className="w-full text-xs p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono"
+                    className="w-full text-xs p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono"
                   />
                   <button
                     type="button"
@@ -1012,53 +1022,140 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       }
                     }}
                     disabled={isTestingSync}
-                    className="px-4 py-2.5 bg-emerald-900 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl shrink-0 flex items-center gap-1.5 disabled:opacity-50 transition-all"
+                    className="px-4 py-2.5 bg-emerald-900 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shrink-0 flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all cursor-pointer shadow-xs"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isTestingSync ? 'animate-spin' : ''}`} />
                     <span>Uji & Sinkron</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Didapatkan dari menu <strong>Deploy &rarr; New deployment &rarr; Web app</strong> di editor Google Apps Script.
-                </p>
+
+                {/* Indikator Live Pengecekan URL */}
+                {gasUrl.trim() && !gasUrl.trim().endsWith('/exec') && !gasUrl.trim().endsWith('/dev') && (
+                  <div className="mt-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span><strong>Perhatian:</strong> URL di atas belum diakhiri dengan <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold">/exec</code>.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fixed = storage.sanitizeGASUrl(gasUrl);
+                        setGasUrl(fixed);
+                        showToast('URL berhasil diperbaiki (ditambahkan /exec)!');
+                      }}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-lg shrink-0 transition-colors shadow-xs"
+                    >
+                      ⚡ Perbaiki Otomatis (Tambah /exec)
+                    </button>
+                  </div>
+                )}
+
+                <div className="mt-2 p-2.5 bg-white rounded-xl border border-gray-200 text-[11px] text-gray-600">
+                  <span className="font-semibold text-emerald-800">Format URL yang benar (wajib berakhiran /exec):</span><br />
+                  <code className="text-[10px] text-gray-800 font-mono break-all">https://script.google.com/macros/s/AKfycbx123AbCdEfGhIjKlMnOpQrStUvWxYz/exec</code>
+                </div>
               </div>
 
+              {/* Field 2 & 3: Spreadsheet ID & Drive Folder ID */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">ID Google Spreadsheet</label>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-gray-200">
+                  <label className="block text-xs font-bold text-gray-800 mb-1">
+                    2. ID Google Spreadsheet <span className="text-rose-500">*</span>
+                  </label>
+                  <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">
+                    Buka Spreadsheet database Anda, salin kode acak di antara <code className="bg-white px-1 border rounded">/d/</code> dan <code className="bg-white px-1 border rounded">/edit</code> pada link browser.
+                  </p>
                   <input
                     type="text"
-                    placeholder="1sPrEaDshEeT_iD_pKKMMTsSuKa..."
+                    placeholder="Contoh: 1sPrEaDshEeT_iD_pKKMMTsSuKa..."
                     value={spreadsheetId}
                     onChange={(e) => setSpreadsheetId(e.target.value)}
-                    className="w-full text-xs p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono"
+                    className="w-full text-xs p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono"
                   />
+                  <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 text-[10px] text-gray-500 font-mono break-all">
+                    docs.google.com/spreadsheets/d/<span className="text-emerald-700 font-bold bg-emerald-50 px-1 rounded">[SALIN_BAGIAN_INI]</span>/edit
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">ID Folder Utama Google Drive</label>
+
+                <div className="bg-slate-50 p-4 rounded-2xl border border-gray-200">
+                  <label className="block text-xs font-bold text-gray-800 mb-1">
+                    3. ID Folder Utama Google Drive <span className="text-rose-500">*</span>
+                  </label>
+                  <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">
+                    Buka folder penyimpanan di Google Drive, salin kode acak di belakang <code className="bg-white px-1 border rounded">/folders/</code> pada link browser.
+                  </p>
                   <input
                     type="text"
-                    placeholder="1aB2cD3eF4gH5iJ6kL7mN8oP9qR..."
+                    placeholder="Contoh: 1aB2cD3eF4gH5iJ6kL7mN8oP9qR..."
                     value={driveRootId}
                     onChange={(e) => setDriveRootId(e.target.value)}
-                    className="w-full text-xs p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono"
+                    className="w-full text-xs p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono"
                   />
+                  <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 text-[10px] text-gray-500 font-mono break-all">
+                    drive.google.com/drive/folders/<span className="text-emerald-700 font-bold bg-emerald-50 px-1 rounded">[SALIN_BAGIAN_INI]</span>
+                  </div>
                 </div>
               </div>
 
               {/* Hasil Uji Koneksi */}
               {syncResult && (
-                <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
-                  syncResult.success 
-                    ? 'bg-emerald-100/80 text-emerald-900 border border-emerald-300' 
-                    : 'bg-rose-50 text-rose-800 border border-rose-200'
-                }`}>
-                  {syncResult.success ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <div className="space-y-3">
+                  <div className={`p-4 rounded-2xl text-xs flex items-start gap-2.5 ${
+                    syncResult.success 
+                      ? 'bg-emerald-100/80 text-emerald-900 border border-emerald-300' 
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}>
+                    {syncResult.success ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <div className="font-bold">{syncResult.success ? 'Koneksi Berhasil!' : 'Uji Koneksi Belum Berhasil'}</div>
+                      <div className="mt-0.5 leading-relaxed">{syncResult.message}</div>
+
+                      {syncResult.autoFixedUrl && (
+                        <div className="mt-2.5 pt-2 border-t border-rose-200/60 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (syncResult.autoFixedUrl) {
+                                setGasUrl(syncResult.autoFixedUrl);
+                                showToast('URL diperbarui!');
+                              }
+                            }}
+                            className="px-3 py-1 bg-emerald-800 text-white rounded-lg text-[11px] font-bold hover:bg-emerald-900 transition-colors"
+                          >
+                            Gunakan URL dengan /exec ini
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Panduan Pemecahan Masalah Khusus Jika Gagal */}
+                  {!syncResult.success && (
+                    <div className="p-4 bg-amber-50/80 rounded-2xl border border-amber-200 text-xs text-amber-950">
+                      <div className="font-bold text-sm text-amber-900 mb-2 flex items-center gap-1.5">
+                        <Shield className="w-4 h-4 text-amber-700" />
+                        <span>3 Hal Penting yang Perlu Dicek di Google Apps Script:</span>
+                      </div>
+                      <ol className="list-decimal list-inside space-y-2 text-[11px] leading-relaxed text-amber-900/90 pl-1">
+                        <li>
+                          <strong>Pastikan Akhiran URL Ada "/exec":</strong><br />
+                          <span className="text-gray-600">URL Web App harus berakhiran <code className="bg-white px-1 py-0.5 rounded font-mono text-amber-800">/exec</code>. Jika terpotong di tengah, klik tombol kuning "⚡ Perbaiki Otomatis" di atas.</span>
+                        </li>
+                        <li>
+                          <strong>Pengaturan Akses Wajib: "Anyone" (Siapa saja):</strong><br />
+                          <span className="text-gray-600">Buka Apps Script &rarr; klik <strong>Deploy</strong> &rarr; <strong>Manage deployments (Kelola penerapan)</strong> &rarr; klik ikon pensil (Edit) &rarr; ubah <em>Who has access</em> menjadi <strong>Anyone (Siapa saja)</strong> &rarr; klik <em>Deploy</em>.</span>
+                        </li>
+                        <li>
+                          <strong>Pastikan Kode Code.gs Sudah Ditempel:</strong><br />
+                          <span className="text-gray-600">Buka tab <strong>Pusat Deployment GAS</strong> di aplikasi ini, salin isi file <code>Code.gs</code> dan simpan ke editor Apps Script madrasah Anda, lalu buat deployment baru (<strong>New deployment</strong>).</span>
+                        </li>
+                      </ol>
+                    </div>
                   )}
-                  <span>{syncResult.message}</span>
                 </div>
               )}
 

@@ -113,6 +113,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   } | null>(null);
   const [copiedCodeSnippet, setCopiedCodeSnippet] = useState<string | null>(null);
   const [showDetailedGuide, setShowDetailedGuide] = useState(true);
+  const [isPushingData, setIsPushingData] = useState(false);
+  const [isPullingData, setIsPullingData] = useState(false);
 
   // Toast
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -120,6 +122,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handlePushAllToRemote = async () => {
+    setIsPushingData(true);
+    try {
+      const res = await storage.pushDataToRemote();
+      if (res.success) {
+        showToast(res.message);
+        onRefresh();
+      } else {
+        showToast(res.message || 'Gagal mengirim data ke Spreadsheet.');
+      }
+    } catch (err: any) {
+      showToast('Gagal: ' + (err?.message || 'Error'));
+    } finally {
+      setIsPushingData(false);
+    }
+  };
+
+  const handlePullAllFromRemote = async () => {
+    setIsPullingData(true);
+    try {
+      const ok = await storage.syncWithRemote();
+      if (ok) {
+        showToast('Data terbaru dari Google Spreadsheet berhasil ditarik!');
+        onRefresh();
+      } else {
+        showToast('Tidak dapat menarik data. Periksa URL Apps Script Anda.');
+      }
+    } catch (err: any) {
+      showToast('Gagal: ' + (err?.message || 'Error'));
+    } finally {
+      setIsPullingData(false);
+    }
   };
 
   const handleCopyGasCode = (target: string) => {
@@ -1318,16 +1354,60 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 </div>
               )}
 
-              <div className="pt-2 flex gap-2">
+              <div className="pt-2 flex flex-wrap items-center gap-2.5">
                 <button
                   type="submit"
                   disabled={isTestingSync}
-                  className="px-6 py-2.5 bg-[#1b4332] hover:bg-[#2d6a4f] text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                  className="px-6 py-2.5 bg-[#1b4332] hover:bg-[#2d6a4f] text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer"
                 >
                   Simpan Pengaturan Sinkronisasi
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handlePushAllToRemote}
+                  disabled={isPushingData || !gasUrl.trim()}
+                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Kirim semua data menu dan pengaturan lokal ke Google Spreadsheet"
+                >
+                  <Upload className={`w-3.5 h-3.5 ${isPushingData ? 'animate-bounce' : ''}`} />
+                  <span>{isPushingData ? 'Mengirim ke Spreadsheet...' : '🚀 Kirim Semua Data ke Spreadsheet (Push All)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePullAllFromRemote}
+                  disabled={isPullingData || !gasUrl.trim()}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-300 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Tarik data terbaru dari Google Spreadsheet ke browser ini"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isPullingData ? 'animate-spin' : ''}`} />
+                  <span>{isPullingData ? 'Menarik data...' : '🔄 Tarik Data dari Spreadsheet'}</span>
+                </button>
               </div>
             </form>
+
+            {/* Kartu Penjelasan Multi-Device Sync untuk Pengguna */}
+            <div className="mt-6 p-4 bg-emerald-50/80 border border-emerald-300 rounded-2xl text-xs text-emerald-950 space-y-2.5">
+              <div className="font-bold text-sm text-[#1b4332] flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>Kenapa saat diakses dari HP / browser lain datanya tidak langsung ikut yang terbaru?</span>
+              </div>
+              <div className="text-[11px] leading-relaxed text-emerald-900/90 space-y-2">
+                <div className="bg-white p-3 rounded-xl border border-emerald-200 shadow-xs">
+                  <strong className="text-emerald-950 font-bold block mb-1">1. Data Harus Terkirim (Push) ke Google Spreadsheet Terlebih Dahulu:</strong>
+                  Ketika Anda menambah atau mengedit menu di browser ini, perubahannya awalnya berada di browser lokal. Klik tombol hijau <strong>"🚀 Kirim Semua Data ke Spreadsheet (Push All)"</strong> di atas agar seluruh <strong>{menus.length} menu</strong> yang ada sekarang langsung tersimpan ke baris lembar Google Spreadsheet Anda.
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-emerald-200 shadow-xs">
+                  <strong className="text-emerald-950 font-bold block mb-1">2. Akses Otomatis Sudah Aktif di Semua Perangkat:</strong>
+                  Tautan Google Apps Script Anda dan ID Spreadsheet Anda sudah otomatis disetel sebagai pengaturan default aplikasi. Jadi saat Anda membuka web ini dari HP, laptop lain, tablet, atau akun Google lain mana pun, aplikasi otomatis terhubung ke database Spreadsheet yang sama!
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-emerald-200 shadow-xs">
+                  <strong className="text-emerald-950 font-bold block mb-1">3. Cara Menampilkan Data Terbaru di HP / Browser Lain:</strong>
+                  Di HP atau browser lain tersebut, cukup muat ulang (refresh) halaman, atau sentuh tombol <strong>"Sinkron Google Drive"</strong> di bagian atas Dashboard. Data akan langsung terupdate dengan data terbaru dari Google Spreadsheet Anda.
+                </div>
+              </div>
+            </div>
 
             {/* Panduan 3 Langkah Cepat */}
             <div className="mt-8 pt-6 border-t border-gray-200">

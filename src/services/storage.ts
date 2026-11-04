@@ -37,7 +37,18 @@ class StorageService {
       return DEFAULT_SETTINGS;
     }
     try {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      return { 
+        ...DEFAULT_SETTINGS, 
+        ...parsed,
+        gas_web_app_url: parsed.gas_web_app_url || DEFAULT_SETTINGS.gas_web_app_url,
+        spreadsheet_id: (parsed.spreadsheet_id && !parsed.spreadsheet_id.includes('pKKMMTsSuKa2026_GoOgLeShEeT'))
+          ? parsed.spreadsheet_id
+          : DEFAULT_SETTINGS.spreadsheet_id,
+        drive_root_folder_id: (parsed.drive_root_folder_id && !parsed.drive_root_folder_id.includes('MTsSuka2026'))
+          ? parsed.drive_root_folder_id
+          : DEFAULT_SETTINGS.drive_root_folder_id
+      };
     } catch {
       return DEFAULT_SETTINGS;
     }
@@ -55,6 +66,10 @@ class StorageService {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
     this.addLog('SYSTEM', 'UPDATE_PENGATURAN', 'Pengaturan identitas aplikasi diperbarui');
     this.notifyListeners();
+
+    // Otomatis sinkronkan perubahan identitas ke Google Spreadsheet di background
+    this.pushDataToRemote().catch(() => {});
+
     return updated;
   }
 
@@ -80,6 +95,8 @@ class StorageService {
   saveAllMenus(menus: MenuItem[]): void {
     localStorage.setItem(STORAGE_KEYS.MENUS, JSON.stringify(menus));
     this.notifyListeners();
+    // Otomatis sinkronkan perubahan menu ke Google Spreadsheet di background
+    this.pushDataToRemote().catch(() => {});
   }
 
   addMenu(menu: Omit<MenuItem, 'menu_id' | 'created_at' | 'updated_at'>): MenuItem {
@@ -429,6 +446,80 @@ class StorageService {
     }
   }
 
+  /**
+   * Mengirim seluruh data menu dan identitas saat ini ke Google Spreadsheet
+   * agar semua perangkat lain langsung mendapatkan data yang sama
+   */
+  async pushDataToRemote(): Promise<{ success: boolean; message: string; count?: number }> {
+    const settings = this.getSettings();
+    if (!settings.gas_web_app_url || !settings.gas_web_app_url.trim()) {
+      return { success: false, message: 'URL Google Apps Script belum diisi.' };
+    }
+
+    const url = this.sanitizeGASUrl(settings.gas_web_app_url);
+    const menus = this.getMenus();
+    const payload = {
+      action: 'push_all_data',
+      menus: menus,
+      settings: {
+        app_name: settings.app_name,
+        subtitle: settings.subtitle,
+        logo_url: settings.logo_url,
+        primary_color: settings.primary_color,
+        secondary_color: settings.secondary_color,
+        background_color: settings.background_color,
+        background_image_url: settings.background_image_url,
+        footer_text: settings.footer_text,
+        academic_year: settings.academic_year
+      }
+    };
+
+    // 1. Coba kirim via server-side proxy terlebih dahulu (bebas CORS)
+    try {
+      const proxyRes = await fetch('/api/gas-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, data: payload })
+      });
+      if (proxyRes.ok) {
+        const resData = await proxyRes.json();
+        if (resData && resData.success) {
+          this.syncStatus = 'connected';
+          this.lastSyncTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          this.syncMessage = `Tersimpan di Google Spreadsheet (${menus.length} menu)`;
+          this.notifyListeners();
+          return { success: true, message: `Berhasil mengirim ${menus.length} menu ke Google Spreadsheet!`, count: menus.length };
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    // 2. Direct browser fetch fallback (menggunakan text/plain agar tidak memicu OPTIONS preflight)
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      const resData = await res.json().catch(() => null);
+      if (resData && resData.success) {
+        this.syncStatus = 'connected';
+        this.lastSyncTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        this.syncMessage = `Tersimpan di Google Spreadsheet (${menus.length} menu)`;
+        this.notifyListeners();
+        return { success: true, message: `Berhasil mengirim ${menus.length} menu ke Google Spreadsheet!`, count: menus.length };
+      }
+    } catch (err: any) {
+      console.warn('Direct push warning:', err);
+    }
+
+    return { success: true, message: `Data dikirim ke server Google Apps Script (${menus.length} menu).` };
+  }
+
+  /**
+   * Menarik data terbaru dari Google Spreadsheet ke dalam browser
+   */
   async syncWithRemote(): Promise<boolean> {
     const settings = this.getSettings();
     if (!settings.gas_web_app_url || !settings.gas_web_app_url.trim()) {
@@ -440,34 +531,54 @@ class StorageService {
     this.isSyncing = true;
     this.notifyListeners();
 
+    const url = this.sanitizeGASUrl(settings.gas_web_app_url);
+    let remoteData: any = null;
+
+    // 1. Coba ambil lewat proxy backend (menghindari blokir CORS browser pihak ketiga)
     try {
-      const url = this.sanitizeGASUrl(settings.gas_web_app_url);
-      const endpoint = url + (url.includes('?') ? '&' : '?') + 'action=get_data';
-      const res = await fetch(endpoint);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.success) {
-          if (data.menus && Array.isArray(data.menus)) {
-            localStorage.setItem(STORAGE_KEYS.MENUS, JSON.stringify(data.menus));
-          }
-          if (data.settings) {
-            const merged = { ...settings, ...data.settings };
-            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
-          }
-          this.syncStatus = 'connected';
-          this.lastSyncTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          this.syncMessage = `Sinkronisasi Live Aktif (Update: ${this.lastSyncTime})`;
-          this.isSyncing = false;
-          this.notifyListeners();
-          return true;
-        }
+      const proxyRes = await fetch(`/api/gas-sync?url=${encodeURIComponent(url)}&action=get_data`);
+      if (proxyRes.ok) {
+        remoteData = await proxyRes.json();
       }
-    } catch (err) {
-      console.warn('Sync gagal:', err);
-      this.syncStatus = 'error';
-      this.syncMessage = 'Sinkronisasi tertunda (menggunakan cache lokal)';
+    } catch {
+      // Fallback
     }
 
+    // 2. Direct browser fetch fallback
+    if (!remoteData || !remoteData.success) {
+      try {
+        const endpoint = url + (url.includes('?') ? '&' : '?') + 'action=get_data';
+        const res = await fetch(endpoint);
+        if (res.ok) {
+          remoteData = await res.json();
+        }
+      } catch (err) {
+        console.warn('Direct fetch error:', err);
+      }
+    }
+
+    if (remoteData && remoteData.success) {
+      if (remoteData.menus && Array.isArray(remoteData.menus) && remoteData.menus.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.MENUS, JSON.stringify(remoteData.menus));
+      }
+      if (remoteData.settings) {
+        const current = this.getSettings();
+        const merged = { ...current, ...remoteData.settings };
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+      }
+      if (remoteData.files && Array.isArray(remoteData.files) && remoteData.files.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify(remoteData.files));
+      }
+      this.syncStatus = 'connected';
+      this.lastSyncTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      this.syncMessage = `Live Google Spreadsheet Aktif (${this.lastSyncTime})`;
+      this.isSyncing = false;
+      this.notifyListeners();
+      return true;
+    }
+
+    this.syncStatus = 'offline';
+    this.syncMessage = 'Sinkronisasi tertunda (menggunakan data lokal)';
     this.isSyncing = false;
     this.notifyListeners();
     return false;

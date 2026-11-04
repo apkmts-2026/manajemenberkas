@@ -40,9 +40,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   contact_email: 'apk.mts2026@gmail.com',
   contact_phone: '+62 812-3456-7890',
   academic_year: 'Tahun Ajaran 2026/2027',
-  drive_root_folder_id: '1aB2cD3eF4gH5iJ6kL7mN8oP9qR_MTsSuka2026',
-  spreadsheet_id: '1sPrEaDshEeT_iD_pKKMMTsSuKa2026_GoOgLeShEeT',
-  gas_web_app_url: '',
+  drive_root_folder_id: '1Hjp030VwB8nR4g4d01FPRuVPw1-XmRyO',
+  spreadsheet_id: '1H3-WvPs8RqsNG6GRTu32YCbXAukgvnJdDgOkWvTyKYc',
+  gas_web_app_url: 'https://script.google.com/macros/s/AKfycbwfq5Ll8B_rwXcx8RiI3azDLZ7I0aSvfigM5udHPp0ll_KMJ1L0GDU1pRLAdk9FBCEo/exec',
   email_notifications_enabled: true,
   notification_recipient_email: 'apk.mts2026@gmail.com'
 };

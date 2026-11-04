@@ -106,6 +106,56 @@ function gasProxyPlugin(): Plugin {
           }));
         }
       });
+
+      server.middlewares.use('/api/gas-sync', async (req, res) => {
+        try {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', async () => {
+              try {
+                const parsed = JSON.parse(body || '{}');
+                const targetUrl = parsed.url;
+                if (!targetUrl) {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ success: false, message: 'URL target diperlukan' }));
+                  return;
+                }
+                const upstream = await fetch(targetUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  body: JSON.stringify(parsed.data || parsed)
+                });
+                const text = await upstream.text();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(text);
+              } catch (e: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: e.message }));
+              }
+            });
+            return;
+          }
+
+          // GET handler
+          const urlObj = new URL(req.url || '', 'http://localhost:3000');
+          const targetUrl = urlObj.searchParams.get('url');
+          const action = urlObj.searchParams.get('action') || 'get_data';
+          if (!targetUrl) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, message: 'URL target diperlukan' }));
+            return;
+          }
+          const fetchUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + 'action=' + encodeURIComponent(action);
+          const upstream = await fetch(fetchUrl, { method: 'GET', redirect: 'follow' });
+          const text = await upstream.text();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(text);
+        } catch (err: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
     }
   };
 }

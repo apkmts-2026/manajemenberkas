@@ -20,6 +20,7 @@ import { MenuItem, AppSettings } from '../types';
 import { renderIcon } from '../utils/iconMap';
 import { exportPortalSummaryToPdf } from '../utils/pdfExport';
 import { storage } from '../services/storage';
+import { MADRASAH_LOGO_SVG } from '../data/defaultData';
 
 interface DashboardProps {
   settings: AppSettings;
@@ -165,7 +166,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="relative inline-block mx-auto mb-3">
             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full p-1 bg-white shadow-md border-2 border-emerald-700/30 overflow-hidden group">
               <img 
-                src={settings.logo_url} 
+                src={settings.logo_url || MADRASAH_LOGO_SVG} 
                 alt="Logo Madrasah"
                 className="w-full h-full object-cover rounded-full transition-transform duration-300 group-hover:scale-105"
                 onError={(e) => {

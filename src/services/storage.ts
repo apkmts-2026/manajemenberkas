@@ -13,6 +13,7 @@ import {
   INITIAL_ADMINS, 
   INITIAL_AUDIT_LOGS 
 } from '../data/defaultData';
+import { compressImageForSpreadsheet } from '../utils/imageCompressor';
 
 const STORAGE_KEYS = {
   SETTINGS: 'pkkm_settings_v1',
@@ -547,17 +548,42 @@ class StorageService {
 
     const url = this.sanitizeGASUrl(settings.gas_web_app_url);
     const menus = this.getMenus();
+
+    // Pastikan ukuran string logo & background muat di sel Google Spreadsheet (<42.000 karakter)
+    let safeLogo = settings.logo_url;
+    let safeBg = settings.background_image_url;
+
+    if (safeLogo && safeLogo.startsWith('data:') && safeLogo.length > 40000) {
+      try {
+        const comp = await compressImageForSpreadsheet(safeLogo, 240, 40000);
+        safeLogo = comp.dataUrl;
+        try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, safeLogo); } catch {}
+      } catch (err) {
+        console.warn('Auto compress logo warning:', err);
+      }
+    }
+
+    if (safeBg && safeBg.startsWith('data:') && safeBg.length > 40000) {
+      try {
+        const comp = await compressImageForSpreadsheet(safeBg, 800, 40000);
+        safeBg = comp.dataUrl;
+        try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, safeBg); } catch {}
+      } catch (err) {
+        console.warn('Auto compress bg warning:', err);
+      }
+    }
+
     const payload = {
       action: 'push_all_data',
       menus: menus,
       settings: {
         app_name: settings.app_name,
         subtitle: settings.subtitle,
-        logo_url: settings.logo_url,
+        logo_url: safeLogo,
         primary_color: settings.primary_color,
         secondary_color: settings.secondary_color,
         background_color: settings.background_color,
-        background_image_url: settings.background_image_url,
+        background_image_url: safeBg,
         footer_text: settings.footer_text,
         academic_year: settings.academic_year
       }
@@ -654,32 +680,46 @@ class StorageService {
         const current = this.getSettings();
         const incoming = { ...remoteData.settings };
 
-        // PENTING: Hanya timpa logo jika dari Spreadsheet terisi nilai valid dan BUKAN placeholder Unsplash
-        const isRemotePlaceholder = !incoming.logo_url || isUnsplashUrl(incoming.logo_url);
-        if (!isRemotePlaceholder && incoming.logo_url && incoming.logo_url.trim()) {
+        // Cek apakah Spreadsheet memiliki logo kustom yang valid (bukan kosong, bukan unsplash, bukan DEFAULT)
+        const hasValidIncomingLogo = incoming.logo_url && 
+                                     incoming.logo_url.trim() && 
+                                     !isUnsplashUrl(incoming.logo_url) && 
+                                     incoming.logo_url !== 'DEFAULT';
+
+        // Cek apakah Spreadsheet memiliki background kustom yang valid
+        const hasValidIncomingBg = incoming.background_image_url && 
+                                   incoming.background_image_url.trim();
+
+        // 1. Tentukan Logo yang Efektif
+        let effectiveLogo = current.logo_url;
+        if (hasValidIncomingLogo) {
+          // Dari Google Spreadsheet: Terapkan ke browser / perangkat ini!
+          effectiveLogo = incoming.logo_url;
           try {
             localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, incoming.logo_url);
           } catch {}
+        } else if (current.logo_url && !isUnsplashUrl(current.logo_url)) {
+          // Pertahankan logo kustom yang sudah ada di browser ini
+          effectiveLogo = current.logo_url;
         } else {
-          // Jangan sentuh logo kustom pengguna jika remote mengirim URL kosong atau Unsplash
-          incoming.logo_url = current.logo_url;
+          effectiveLogo = DEFAULT_SETTINGS.logo_url;
         }
 
-        // PENTING: Hanya timpa background jika dari Spreadsheet terisi nilai valid (bukan string kosong)
-        if (incoming.background_image_url && incoming.background_image_url.trim()) {
+        // 2. Tentukan Background yang Efektif
+        let effectiveBg = current.background_image_url || '';
+        if (hasValidIncomingBg) {
+          // Dari Google Spreadsheet: Terapkan ke browser / perangkat ini!
+          effectiveBg = incoming.background_image_url;
           try {
             localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, incoming.background_image_url);
           } catch {}
-        } else {
-          // Pertahankan background kustom yang sudah diunggah oleh pengguna
-          incoming.background_image_url = current.background_image_url;
         }
 
         const merged: AppSettings = {
           ...current,
           ...incoming,
-          logo_url: (!isUnsplashUrl(current.logo_url) && current.logo_url) ? current.logo_url : incoming.logo_url,
-          background_image_url: current.background_image_url || incoming.background_image_url || ''
+          logo_url: effectiveLogo,
+          background_image_url: effectiveBg
         };
         try {
           localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));

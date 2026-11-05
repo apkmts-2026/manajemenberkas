@@ -170,7 +170,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 alt="Logo Madrasah"
                 className="w-full h-full object-cover rounded-full transition-transform duration-300 group-hover:scale-105"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=200&auto=format&fit=crop&q=80';
+                  (e.target as HTMLImageElement).src = MADRASAH_LOGO_SVG;
                 }}
               />
             </div>

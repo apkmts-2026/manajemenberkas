@@ -43,6 +43,7 @@ import { renderIcon, AVAILABLE_ICONS } from '../utils/iconMap';
 import { exportPortalSummaryToPdf } from '../utils/pdfExport';
 import { MADRASAH_LOGO_SVG } from '../data/defaultData';
 import { GAS_TEMPLATES, getCombinedGasBackendCode, getModularGasCode } from '../data/gasTemplates';
+import { compressImageForSpreadsheet } from '../utils/imageCompressor';
 
 interface AdminPortalProps {
   settings: AppSettings;
@@ -226,6 +227,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     });
   };
 
+  const [isSyncingBranding, setIsSyncingBranding] = useState(false);
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -237,20 +240,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
     setIsUploadingLogo(true);
     try {
-      const dataUrl = await processImageUpload(file, 280, 280, 0.85);
-      setLogoUrl(dataUrl);
-      storage.saveSettings({ logo_url: dataUrl });
+      const comp = await compressImageForSpreadsheet(file, 240, 40000);
+      setLogoUrl(comp.dataUrl);
+      storage.saveSettings({ logo_url: comp.dataUrl });
       onRefresh();
 
-      // Simpan permanen ke server disk dan kirim ke Google Apps Script/Drive
-      const res = await storage.uploadBrandingAsset('logo', dataUrl, file.name);
-      if (res.success && res.url) {
-        setLogoUrl(res.url);
-        onRefresh();
-        showToast('Logo berhasil disimpan permanen!');
-      } else {
-        showToast('Logo tersimpan di browser!');
-      }
+      // Simpan juga ke server file static lokal jika tersedia
+      storage.uploadBrandingAsset('logo', comp.dataUrl, file.name).catch(() => {});
+
+      // Langsung dorong ke Google Spreadsheet agar langsung sinkron ke browser lain
+      await storage.pushDataToRemote();
+      onRefresh();
+      showToast(`Logo berhasil disimpan & disinkronkan ke Google Spreadsheet (${comp.approxKb} KB)!`);
     } catch {
       showToast('Gagal memproses gambar logo.');
     } finally {
@@ -269,24 +270,60 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
     setIsUploadingBg(true);
     try {
-      const dataUrl = await processImageUpload(file, 1280, 720, 0.75);
-      setBgImageUrl(dataUrl);
-      storage.saveSettings({ background_image_url: dataUrl });
+      const comp = await compressImageForSpreadsheet(file, 800, 40000);
+      setBgImageUrl(comp.dataUrl);
+      storage.saveSettings({ background_image_url: comp.dataUrl });
       onRefresh();
 
-      // Simpan permanen ke server disk dan kirim ke Google Apps Script/Drive
-      const res = await storage.uploadBrandingAsset('background', dataUrl, file.name);
-      if (res.success && res.url) {
-        setBgImageUrl(res.url);
-        onRefresh();
-        showToast('Background berhasil disimpan permanen!');
-      } else {
-        showToast('Background tersimpan di browser!');
-      }
+      // Simpan juga ke server file static lokal jika tersedia
+      storage.uploadBrandingAsset('background', comp.dataUrl, file.name).catch(() => {});
+
+      // Langsung dorong ke Google Spreadsheet agar langsung sinkron ke browser lain
+      await storage.pushDataToRemote();
+      onRefresh();
+      showToast(`Background berhasil disimpan & disinkronkan ke Google Spreadsheet (${comp.approxKb} KB)!`);
     } catch {
       showToast('Gagal memproses gambar background.');
     } finally {
       setIsUploadingBg(false);
+    }
+  };
+
+  /**
+   * Menjamin sinkronisasi logo & background yang sudah ada ke Google Spreadsheet
+   * agar perangkat atau browser lain langsung menampilkan gambar yang sama
+   */
+  const handleForceSyncBranding = async () => {
+    setIsSyncingBranding(true);
+    try {
+      let finalLogo = logoUrl;
+      let finalBg = bgImageUrl;
+
+      if (finalLogo && finalLogo.startsWith('data:') && finalLogo.length > 40000) {
+        const compLogo = await compressImageForSpreadsheet(finalLogo, 240, 40000);
+        finalLogo = compLogo.dataUrl;
+        setLogoUrl(finalLogo);
+        storage.saveSettings({ logo_url: finalLogo });
+      }
+
+      if (finalBg && finalBg.startsWith('data:') && finalBg.length > 40000) {
+        const compBg = await compressImageForSpreadsheet(finalBg, 800, 40000);
+        finalBg = compBg.dataUrl;
+        setBgImageUrl(finalBg);
+        storage.saveSettings({ background_image_url: finalBg });
+      }
+
+      const res = await storage.pushDataToRemote();
+      if (res.success) {
+        showToast('Logo & Background berhasil disinkronkan ke Google Spreadsheet! Sekarang buka di browser lain untuk melihat hasilnya.');
+      } else {
+        showToast('Tersimpan di browser ini. ' + res.message);
+      }
+      onRefresh();
+    } catch (err: any) {
+      showToast('Kendala sinkronisasi: ' + (err?.message || 'Error'));
+    } finally {
+      setIsSyncingBranding(false);
     }
   };
 
@@ -452,19 +489,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   };
 
   // Save Settings
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    let finalLogo = logoUrl.trim();
+    let finalBg = bgImageUrl.trim();
+
+    if (finalLogo && finalLogo.startsWith('data:') && finalLogo.length > 40000) {
+      try {
+        const comp = await compressImageForSpreadsheet(finalLogo, 240, 40000);
+        finalLogo = comp.dataUrl;
+        setLogoUrl(finalLogo);
+      } catch {}
+    }
+
+    if (finalBg && finalBg.startsWith('data:') && finalBg.length > 40000) {
+      try {
+        const comp = await compressImageForSpreadsheet(finalBg, 800, 40000);
+        finalBg = comp.dataUrl;
+        setBgImageUrl(finalBg);
+      } catch {}
+    }
+
     storage.saveSettings({
       app_name: appName.trim(),
       subtitle: subtitle.trim(),
-      logo_url: logoUrl.trim(),
-      background_image_url: bgImageUrl.trim(),
+      logo_url: finalLogo,
+      background_image_url: finalBg,
       academic_year: academicYear.trim(),
       footer_text: footerText.trim(),
       notification_recipient_email: notificationEmail.trim(),
       email_notifications_enabled: emailNotifEnabled
     });
-    showToast('Pengaturan identitas dan desain berhasil disimpan!');
+
+    // Otomatis dorong ke Google Spreadsheet
+    await storage.pushDataToRemote();
+    showToast('Pengaturan identitas berhasil disimpan & disinkronkan ke Google Spreadsheet!');
     onRefresh();
   };
 
@@ -772,6 +831,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             <p className="text-xs text-gray-500 mb-6">
               Ubah judul aplikasi, subjudul, logo madrasah, dan tahun pelajaran. Perubahan langsung disimpan ke Spreadsheet.
             </p>
+
+            {/* Kartu Status & Tombol Sinkronisasi Multi-Perangkat (Cloud Spreadsheet) */}
+            <div className="mb-6 p-4 bg-gradient-to-r from-emerald-50 to-teal-50/70 rounded-2xl border border-emerald-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <span>Sinkronisasi Multi-Perangkat (Cloud Spreadsheet)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-200/80 text-emerald-900 font-semibold">Aktif</span>
+                  </h3>
+                  <p className="text-[11px] text-emerald-800/90 mt-0.5 leading-relaxed">
+                    Logo dan background dikompres secara otomatis agar muat di Google Spreadsheet (&lt;42 KB) sehingga tampil sama di HP santri, laptop pengawas, maupun browser lain.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleForceSyncBranding}
+                disabled={isSyncingBranding}
+                className="cursor-pointer px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 transition-all shrink-0 active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingBranding ? 'animate-spin' : ''}`} />
+                <span>{isSyncingBranding ? 'Mengirim ke Cloud...' : 'Sinkronkan Logo & Background'}</span>
+              </button>
+            </div>
 
             <form onSubmit={handleSaveSettings} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

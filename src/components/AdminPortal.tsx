@@ -193,7 +193,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     showToast(`File ${fileName} berhasil diunduh!`);
   };
 
-  const processImageUpload = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
+  const processImageUpload = (file: File, maxWidth: number, maxHeight: number, quality = 0.85): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -215,7 +215,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             return;
           }
           ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.88);
+          const dataUrl = canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', quality);
           resolve(dataUrl);
         };
         img.onerror = () => resolve(e.target?.result as string);
@@ -237,9 +237,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
     setIsUploadingLogo(true);
     try {
-      const dataUrl = await processImageUpload(file, 400, 400);
+      const dataUrl = await processImageUpload(file, 280, 280, 0.85);
       setLogoUrl(dataUrl);
-      showToast('Logo berhasil diunggah! Klik "Simpan Perubahan Identitas" untuk menerapkan.');
+      // Langsung simpan permanen ke slot terproteksi lokal
+      storage.saveSettings({ logo_url: dataUrl });
+      onRefresh();
+      showToast('Logo tersimpan permanen!');
+
+      // Unggah ke Google Drive jika URL Apps Script aktif
+      if (gasUrl.trim()) {
+        storage.uploadBrandingAsset('logo', dataUrl, file.name).then(res => {
+          if (res.success && res.url) {
+            setLogoUrl(res.url);
+            storage.saveSettings({ logo_url: res.url });
+            onRefresh();
+            showToast('Logo berhasil diunggah ke Google Drive & tersimpan di Spreadsheet!');
+          }
+        }).catch(() => {});
+      }
     } catch {
       showToast('Gagal memproses gambar logo.');
     } finally {
@@ -258,9 +273,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
     setIsUploadingBg(true);
     try {
-      const dataUrl = await processImageUpload(file, 1920, 1080);
+      const dataUrl = await processImageUpload(file, 1280, 720, 0.75);
       setBgImageUrl(dataUrl);
-      showToast('Gambar background berhasil diunggah! Klik "Simpan Perubahan Identitas" untuk menerapkan.');
+      // Langsung simpan permanen ke slot terproteksi lokal
+      storage.saveSettings({ background_image_url: dataUrl });
+      onRefresh();
+      showToast('Background tersimpan permanen!');
+
+      // Unggah ke Google Drive jika URL Apps Script aktif
+      if (gasUrl.trim()) {
+        storage.uploadBrandingAsset('background', dataUrl, file.name).then(res => {
+          if (res.success && res.url) {
+            setBgImageUrl(res.url);
+            storage.saveSettings({ background_image_url: res.url });
+            onRefresh();
+            showToast('Background berhasil diunggah ke Google Drive & tersimpan di Spreadsheet!');
+          }
+        }).catch(() => {});
+      }
     } catch {
       showToast('Gagal memproses gambar background.');
     } finally {
@@ -816,9 +846,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       type="button"
                       onClick={() => {
                         setLogoUrl(MADRASAH_LOGO_SVG);
+                        storage.saveSettings({ logo_url: MADRASAH_LOGO_SVG });
+                        onRefresh();
                         showToast('Logo dikembalikan ke logo resmi MTs Suka.');
                       }}
-                      className="px-3.5 py-2 bg-white hover:bg-gray-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-semibold transition-all"
+                      className="px-3.5 py-2 bg-white hover:bg-gray-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
                     >
                       Reset Logo Default
                     </button>
@@ -876,9 +908,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       type="button"
                       onClick={() => {
                         setBgImageUrl('');
+                        storage.saveSettings({ background_image_url: '' });
+                        onRefresh();
                         showToast('Background dihapus. Kembali ke warna hijau sage.');
                       }}
-                      className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+                      className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Hapus Background (Pakai Polos)</span>
@@ -892,20 +926,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setBgImageUrl('https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=1920&q=80');
-                      showToast('Background motif pesantren dipilih.');
+                      const url = 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=1920&q=80';
+                      setBgImageUrl(url);
+                      storage.saveSettings({ background_image_url: url });
+                      onRefresh();
+                      showToast('Background motif pesantren dipilih & tersimpan.');
                     }}
-                    className="px-2.5 py-1 bg-white hover:bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-900 font-semibold transition-colors"
+                    className="px-2.5 py-1 bg-white hover:bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-900 font-semibold transition-colors cursor-pointer"
                   >
                     Pesantren & Santri
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setBgImageUrl('https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&w=1920&q=80');
-                      showToast('Background motif arsitektur Islami dipilih.');
+                      const url = 'https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&w=1920&q=80';
+                      setBgImageUrl(url);
+                      storage.saveSettings({ background_image_url: url });
+                      onRefresh();
+                      showToast('Background motif arsitektur Islami dipilih & tersimpan.');
                     }}
-                    className="px-2.5 py-1 bg-white hover:bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-900 font-semibold transition-colors"
+                    className="px-2.5 py-1 bg-white hover:bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-900 font-semibold transition-colors cursor-pointer"
                   >
                     Arsitektur Kubah Islami
                   </button>
@@ -913,9 +953,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     type="button"
                     onClick={() => {
                       setBgImageUrl('');
+                      storage.saveSettings({ background_image_url: '' });
+                      onRefresh();
                       showToast('Background hijau sage polos dipilih.');
                     }}
-                    className="px-2.5 py-1 bg-white hover:bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-900 font-semibold transition-colors"
+                    className="px-2.5 py-1 bg-white hover:bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-900 font-semibold transition-colors cursor-pointer"
                   >
                     Hijau Sage Polos (Asli)
                   </button>

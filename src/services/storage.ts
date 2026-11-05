@@ -21,7 +21,9 @@ const STORAGE_KEYS = {
   ADMINS: 'pkkm_admins_v1',
   LOGS: 'pkkm_logs_v1',
   NOTIFS: 'pkkm_notifs_v1',
-  AUTH: 'pkkm_current_admin_v1'
+  AUTH: 'pkkm_current_admin_v1',
+  CUSTOM_LOGO: 'pkkm_custom_logo_v1',
+  CUSTOM_BG: 'pkkm_custom_bg_v1'
 };
 
 class StorageService {
@@ -32,15 +34,27 @@ class StorageService {
   // === SETTINGS ===
   getSettings(): AppSettings {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    const customLogo = localStorage.getItem(STORAGE_KEYS.CUSTOM_LOGO);
+    const customBg = localStorage.getItem(STORAGE_KEYS.CUSTOM_BG);
+
     if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
-      return DEFAULT_SETTINGS;
+      const initial = {
+        ...DEFAULT_SETTINGS,
+        logo_url: customLogo || DEFAULT_SETTINGS.logo_url,
+        background_image_url: customBg !== null ? customBg : DEFAULT_SETTINGS.background_image_url
+      };
+      try {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(initial));
+      } catch {}
+      return initial;
     }
     try {
       const parsed = JSON.parse(raw);
       return { 
         ...DEFAULT_SETTINGS, 
         ...parsed,
+        logo_url: customLogo || parsed.logo_url || DEFAULT_SETTINGS.logo_url,
+        background_image_url: customBg !== null ? customBg : (parsed.background_image_url || DEFAULT_SETTINGS.background_image_url),
         gas_web_app_url: parsed.gas_web_app_url || DEFAULT_SETTINGS.gas_web_app_url,
         spreadsheet_id: (parsed.spreadsheet_id && !parsed.spreadsheet_id.includes('pKKMMTsSuKa2026_GoOgLeShEeT'))
           ? parsed.spreadsheet_id
@@ -62,8 +76,30 @@ class StorageService {
     } catch {
       current = DEFAULT_SETTINGS;
     }
+
+    // Simpan logo dan background ke slot terproteksi agar tidak pernah terhapus oleh reload/sync
+    if (settings.logo_url && settings.logo_url.trim()) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, settings.logo_url);
+      } catch (e) {
+        console.warn('Quota exceeded for custom logo in local storage:', e);
+      }
+    }
+    if (settings.background_image_url !== undefined) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, settings.background_image_url);
+      } catch (e) {
+        console.warn('Quota exceeded for custom background in local storage:', e);
+      }
+    }
+
     const updated = { ...current, ...settings };
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+    try {
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Quota exceeded for settings JSON:', e);
+    }
+
     this.addLog('SYSTEM', 'UPDATE_PENGATURAN', 'Pengaturan identitas aplikasi diperbarui');
     this.notifyListeners();
 
@@ -563,8 +599,30 @@ class StorageService {
       }
       if (remoteData.settings) {
         const current = this.getSettings();
-        const merged = { ...current, ...remoteData.settings };
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+        const incoming = { ...remoteData.settings };
+
+        // PENTING: Hanya timpa logo jika dari Spreadsheet terisi nilai valid (bukan string kosong)
+        if (incoming.logo_url && incoming.logo_url.trim()) {
+          try {
+            localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, incoming.logo_url);
+          } catch {}
+        } else {
+          incoming.logo_url = current.logo_url;
+        }
+
+        // PENTING: Hanya timpa background jika dari Spreadsheet terisi nilai valid (bukan string kosong)
+        if (incoming.background_image_url && incoming.background_image_url.trim()) {
+          try {
+            localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, incoming.background_image_url);
+          } catch {}
+        } else {
+          incoming.background_image_url = current.background_image_url;
+        }
+
+        const merged = { ...current, ...incoming };
+        try {
+          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+        } catch {}
       }
       if (remoteData.files && Array.isArray(remoteData.files) && remoteData.files.length > 0) {
         localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify(remoteData.files));
@@ -582,6 +640,81 @@ class StorageService {
     this.isSyncing = false;
     this.notifyListeners();
     return false;
+  }
+
+  /**
+   * Mengunggah file logo atau background ke Google Drive via Google Apps Script
+   * dan mencatat link Drive langsung ke Google Spreadsheet
+   */
+  async uploadBrandingAsset(
+    assetType: 'logo' | 'background',
+    dataUrl: string,
+    fileName?: string
+  ): Promise<{ success: boolean; url?: string; message?: string }> {
+    const settings = this.getSettings();
+    if (!settings.gas_web_app_url || !settings.gas_web_app_url.trim()) {
+      return { success: false, message: 'Google Apps Script belum dihubungkan' };
+    }
+
+    const url = this.sanitizeGASUrl(settings.gas_web_app_url);
+    const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!matches) {
+      return { success: false, message: 'Format base64 tidak valid' };
+    }
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const defaultName = assetType === 'logo' ? 'logo_madrasah.jpg' : 'background_madrasah.jpg';
+
+    const payload = {
+      action: 'upload_branding_asset',
+      assetType,
+      name: fileName || defaultName,
+      mimeType,
+      base64Data
+    };
+
+    // 1. Coba kirim via server-side proxy
+    try {
+      const proxyRes = await fetch('/api/gas-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, data: payload })
+      });
+      if (proxyRes.ok) {
+        const resData = await proxyRes.json();
+        if (resData && resData.success && resData.url) {
+          if (assetType === 'logo') {
+            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, resData.url); } catch {}
+          } else {
+            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, resData.url); } catch {}
+          }
+          return { success: true, url: resData.url };
+        }
+      }
+    } catch {}
+
+    // 2. Direct browser fetch fallback
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      const resData = await res.json().catch(() => null);
+      if (resData && resData.success && resData.url) {
+        if (assetType === 'logo') {
+          try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, resData.url); } catch {}
+        } else {
+          try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, resData.url); } catch {}
+        }
+        return { success: true, url: resData.url };
+      }
+    } catch (err: any) {
+      console.warn('Direct upload error:', err);
+    }
+
+    return { success: false, message: 'Gagal mengunggah ke Drive' };
   }
 }
 

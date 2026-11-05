@@ -82,6 +82,40 @@ function doPost(e) {
     } else if (action === 'upload_file') {
       var uploaded = uploadFileToDrive(payload.sessionToken || 'SYSTEM', payload.uploadPayload);
       response = { success: true, data: uploaded };
+    } else if (action === 'upload_branding_asset') {
+      var assetType = payload.assetType || 'logo';
+      var base64Data = payload.base64Data;
+      var mimeType = payload.mimeType || 'image/jpeg';
+      var fileName = payload.name || (assetType === 'logo' ? 'logo_madrasah.jpg' : 'background_madrasah.jpg');
+      
+      var targetFolder = getDriveRootFolder();
+      var decoded = Utilities.base64Decode(base64Data);
+      var blob = Utilities.newBlob(decoded, mimeType, fileName);
+      var createdFile = targetFolder.createFile(blob);
+      createdFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      var fileId = createdFile.getId();
+      var driveUrl = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1920';
+
+      var ss = getSpreadsheet();
+      var sheetPengaturan = ss.getSheetByName(CONFIG.SHEETS.PENGATURAN);
+      if (sheetPengaturan) {
+        var keyToFind = (assetType === 'logo') ? 'LOGO_URL' : 'BACKGROUND_IMAGE_URL';
+        var data = sheetPengaturan.getDataRange().getValues();
+        var found = false;
+        for (var r = 1; r < data.length; r++) {
+          if (String(data[r][0]).toUpperCase() === keyToFind) {
+            sheetPengaturan.getRange(r + 1, 2).setValue(driveUrl);
+            sheetPengaturan.getRange(r + 1, 3).setValue(getCurrentTimestamp());
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          sheetPengaturan.appendRow([keyToFind, driveUrl, getCurrentTimestamp()]);
+        }
+      }
+
+      response = { success: true, url: driveUrl, fileId: fileId };
     } else {
       response = { success: false, message: 'Action tidak dikenal' };
     }
@@ -200,18 +234,24 @@ function syncAllDataToSpreadsheet(menus, settings) {
       };
       var data = sheetPengaturan.getDataRange().getValues();
       for (var k in map) {
-        if (map[k] !== undefined) {
+        if (map[k] !== undefined && map[k] !== null) {
+          var val = String(map[k]);
+          // Jangan tulis data URL base64 yang sangat panjang (>45.000 karakter) ke sel Spreadsheet untuk mencegah cell overflow error
+          if (val.length > 45000) continue;
+
           var found = false;
           for (var r = 1; r < data.length; r++) {
             if (String(data[r][0]).toUpperCase() === k) {
-              sheetPengaturan.getRange(r + 1, 2).setValue(map[k]);
-              sheetPengaturan.getRange(r + 1, 3).setValue(getCurrentTimestamp());
+              if (val !== '') {
+                sheetPengaturan.getRange(r + 1, 2).setValue(val);
+                sheetPengaturan.getRange(r + 1, 3).setValue(getCurrentTimestamp());
+              }
               found = true;
               break;
             }
           }
-          if (!found) {
-            sheetPengaturan.appendRow([k, map[k], getCurrentTimestamp()]);
+          if (!found && val !== '') {
+            sheetPengaturan.appendRow([k, val, getCurrentTimestamp()]);
           }
         }
       }

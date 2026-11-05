@@ -43,7 +43,8 @@ export default function App() {
       }
     }
 
-    // Automatically attempt remote cloud sync from Google Drive & Spreadsheet on load
+    // Automatically load server-persisted branding and remote cloud sync on load
+    storage.loadBrandingFromServer();
     storage.syncWithRemote();
 
     return () => {

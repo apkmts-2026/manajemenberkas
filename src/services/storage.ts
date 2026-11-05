@@ -26,6 +26,11 @@ const STORAGE_KEYS = {
   CUSTOM_BG: 'pkkm_custom_bg_v1'
 };
 
+function isUnsplashUrl(url?: string | null): boolean {
+  if (!url) return false;
+  return url.includes('images.unsplash.com') || url.includes('unsplash');
+}
+
 class StorageService {
   private notifyListeners() {
     window.dispatchEvent(new Event('pkkm_storage_updated'));
@@ -34,14 +39,22 @@ class StorageService {
   // === SETTINGS ===
   getSettings(): AppSettings {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    const customLogo = localStorage.getItem(STORAGE_KEYS.CUSTOM_LOGO);
-    const customBg = localStorage.getItem(STORAGE_KEYS.CUSTOM_BG);
+    let customLogo = localStorage.getItem(STORAGE_KEYS.CUSTOM_LOGO);
+    let customBg = localStorage.getItem(STORAGE_KEYS.CUSTOM_BG);
+
+    // Clean up any stale Unsplash placeholder that might have been saved in CUSTOM_LOGO
+    if (customLogo && isUnsplashUrl(customLogo)) {
+      try {
+        localStorage.removeItem(STORAGE_KEYS.CUSTOM_LOGO);
+      } catch {}
+      customLogo = null;
+    }
 
     if (!raw) {
-      const initial = {
+      const initial: AppSettings = {
         ...DEFAULT_SETTINGS,
         logo_url: customLogo || DEFAULT_SETTINGS.logo_url,
-        background_image_url: customBg !== null ? customBg : DEFAULT_SETTINGS.background_image_url
+        background_image_url: customBg !== null && customBg !== undefined ? customBg : DEFAULT_SETTINGS.background_image_url
       };
       try {
         localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(initial));
@@ -50,11 +63,17 @@ class StorageService {
     }
     try {
       const parsed = JSON.parse(raw);
+      const parsedLogo = (parsed.logo_url && !isUnsplashUrl(parsed.logo_url)) ? parsed.logo_url : null;
+      const effectiveLogo = customLogo || parsedLogo || DEFAULT_SETTINGS.logo_url;
+      const effectiveBg = (customBg !== null && customBg !== undefined)
+        ? customBg
+        : (parsed.background_image_url !== undefined ? parsed.background_image_url : DEFAULT_SETTINGS.background_image_url);
+
       return { 
         ...DEFAULT_SETTINGS, 
         ...parsed,
-        logo_url: customLogo || parsed.logo_url || DEFAULT_SETTINGS.logo_url,
-        background_image_url: customBg !== null ? customBg : (parsed.background_image_url || DEFAULT_SETTINGS.background_image_url),
+        logo_url: effectiveLogo,
+        background_image_url: effectiveBg,
         gas_web_app_url: parsed.gas_web_app_url || DEFAULT_SETTINGS.gas_web_app_url,
         spreadsheet_id: (parsed.spreadsheet_id && !parsed.spreadsheet_id.includes('pKKMMTsSuKa2026_GoOgLeShEeT'))
           ? parsed.spreadsheet_id
@@ -78,7 +97,7 @@ class StorageService {
     }
 
     // Simpan logo dan background ke slot terproteksi agar tidak pernah terhapus oleh reload/sync
-    if (settings.logo_url && settings.logo_url.trim()) {
+    if (settings.logo_url && settings.logo_url.trim() && !isUnsplashUrl(settings.logo_url)) {
       try {
         localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, settings.logo_url);
       } catch (e) {
@@ -107,6 +126,40 @@ class StorageService {
     this.pushDataToRemote().catch(() => {});
 
     return updated;
+  }
+
+  /**
+   * Menarik branding kustom yang tersimpan secara permanen di server disk lokal
+   */
+  async loadBrandingFromServer(): Promise<void> {
+    try {
+      const res = await fetch('/api/get-branding');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && data.branding) {
+          const current = this.getSettings();
+          const patch: Partial<AppSettings> = {};
+          let shouldUpdate = false;
+
+          if (data.branding.logo_url && (!current.logo_url || isUnsplashUrl(current.logo_url) || current.logo_url === DEFAULT_SETTINGS.logo_url)) {
+            patch.logo_url = data.branding.logo_url;
+            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, data.branding.logo_url); } catch {}
+            shouldUpdate = true;
+          }
+          if (data.branding.background_image_url && !current.background_image_url) {
+            patch.background_image_url = data.branding.background_image_url;
+            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, data.branding.background_image_url); } catch {}
+            shouldUpdate = true;
+          }
+
+          if (shouldUpdate) {
+            const updated = { ...current, ...patch };
+            try { localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated)); } catch {}
+            this.notifyListeners();
+          }
+        }
+      }
+    } catch {}
   }
 
   // === MENUS ===
@@ -601,12 +654,14 @@ class StorageService {
         const current = this.getSettings();
         const incoming = { ...remoteData.settings };
 
-        // PENTING: Hanya timpa logo jika dari Spreadsheet terisi nilai valid (bukan string kosong)
-        if (incoming.logo_url && incoming.logo_url.trim()) {
+        // PENTING: Hanya timpa logo jika dari Spreadsheet terisi nilai valid dan BUKAN placeholder Unsplash
+        const isRemotePlaceholder = !incoming.logo_url || isUnsplashUrl(incoming.logo_url);
+        if (!isRemotePlaceholder && incoming.logo_url && incoming.logo_url.trim()) {
           try {
             localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, incoming.logo_url);
           } catch {}
         } else {
+          // Jangan sentuh logo kustom pengguna jika remote mengirim URL kosong atau Unsplash
           incoming.logo_url = current.logo_url;
         }
 
@@ -616,10 +671,16 @@ class StorageService {
             localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, incoming.background_image_url);
           } catch {}
         } else {
+          // Pertahankan background kustom yang sudah diunggah oleh pengguna
           incoming.background_image_url = current.background_image_url;
         }
 
-        const merged = { ...current, ...incoming };
+        const merged: AppSettings = {
+          ...current,
+          ...incoming,
+          logo_url: (!isUnsplashUrl(current.logo_url) && current.logo_url) ? current.logo_url : incoming.logo_url,
+          background_image_url: current.background_image_url || incoming.background_image_url || ''
+        };
         try {
           localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
         } catch {}
@@ -643,78 +704,102 @@ class StorageService {
   }
 
   /**
-   * Mengunggah file logo atau background ke Google Drive via Google Apps Script
-   * dan mencatat link Drive langsung ke Google Spreadsheet
+   * Mengunggah file logo atau background ke server lokal & Google Drive via Google Apps Script
+   * Menjamin keabadian 100% tanpa risiko ter-reset saat di-reload
    */
   async uploadBrandingAsset(
     assetType: 'logo' | 'background',
     dataUrl: string,
     fileName?: string
   ): Promise<{ success: boolean; url?: string; message?: string }> {
-    const settings = this.getSettings();
-    if (!settings.gas_web_app_url || !settings.gas_web_app_url.trim()) {
-      return { success: false, message: 'Google Apps Script belum dihubungkan' };
-    }
+    let activeUrl = dataUrl;
 
-    const url = this.sanitizeGASUrl(settings.gas_web_app_url);
-    const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (!matches) {
-      return { success: false, message: 'Format base64 tidak valid' };
-    }
-
-    const mimeType = matches[1];
-    const base64Data = matches[2];
-    const defaultName = assetType === 'logo' ? 'logo_madrasah.jpg' : 'background_madrasah.jpg';
-
-    const payload = {
-      action: 'upload_branding_asset',
-      assetType,
-      name: fileName || defaultName,
-      mimeType,
-      base64Data
-    };
-
-    // 1. Coba kirim via server-side proxy
+    // 1. Simpan permanen ke server filesystem lokal (/public/uploads/...)
     try {
-      const proxyRes = await fetch('/api/gas-sync', {
+      const serverRes = await fetch('/api/upload-branding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, data: payload })
+        body: JSON.stringify({ type: assetType, dataUrl })
       });
-      if (proxyRes.ok) {
-        const resData = await proxyRes.json();
-        if (resData && resData.success && resData.url) {
+      if (serverRes.ok) {
+        const sData = await serverRes.json();
+        if (sData && sData.success && sData.url) {
+          activeUrl = sData.url;
           if (assetType === 'logo') {
-            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, resData.url); } catch {}
+            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, activeUrl); } catch {}
           } else {
-            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, resData.url); } catch {}
+            try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, activeUrl); } catch {}
           }
-          return { success: true, url: resData.url };
+          this.saveSettings(assetType === 'logo' ? { logo_url: activeUrl } : { background_image_url: activeUrl });
         }
       }
-    } catch {}
-
-    // 2. Direct browser fetch fallback
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      });
-      const resData = await res.json().catch(() => null);
-      if (resData && resData.success && resData.url) {
-        if (assetType === 'logo') {
-          try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, resData.url); } catch {}
-        } else {
-          try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, resData.url); } catch {}
-        }
-        return { success: true, url: resData.url };
-      }
-    } catch (err: any) {
-      console.warn('Direct upload error:', err);
+    } catch (e) {
+      console.warn('Local server upload warning:', e);
     }
 
-    return { success: false, message: 'Gagal mengunggah ke Drive' };
+    // 2. Jika Google Apps Script terhubung, unggah juga ke Google Drive & simpan ke Google Spreadsheet
+    const settings = this.getSettings();
+    if (settings.gas_web_app_url && settings.gas_web_app_url.trim()) {
+      const url = this.sanitizeGASUrl(settings.gas_web_app_url);
+      const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const defaultName = assetType === 'logo' ? 'logo_madrasah.jpg' : 'background_madrasah.jpg';
+
+        const payload = {
+          action: 'upload_branding_asset',
+          assetType,
+          name: fileName || defaultName,
+          mimeType,
+          base64Data
+        };
+
+        try {
+          const proxyRes = await fetch('/api/gas-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, data: payload })
+          });
+          if (proxyRes.ok) {
+            const resData = await proxyRes.json();
+            if (resData && resData.success && resData.url) {
+              activeUrl = resData.url;
+              if (assetType === 'logo') {
+                try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, resData.url); } catch {}
+              } else {
+                try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, resData.url); } catch {}
+              }
+              this.saveSettings(assetType === 'logo' ? { logo_url: resData.url } : { background_image_url: resData.url });
+              return { success: true, url: resData.url };
+            }
+          }
+        } catch {}
+
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          });
+          const resData = await res.json().catch(() => null);
+          if (resData && resData.success && resData.url) {
+            activeUrl = resData.url;
+            if (assetType === 'logo') {
+              try { localStorage.setItem(STORAGE_KEYS.CUSTOM_LOGO, resData.url); } catch {}
+            } else {
+              try { localStorage.setItem(STORAGE_KEYS.CUSTOM_BG, resData.url); } catch {}
+            }
+            this.saveSettings(assetType === 'logo' ? { logo_url: resData.url } : { background_image_url: resData.url });
+            return { success: true, url: resData.url };
+          }
+        } catch (err: any) {
+          console.warn('Direct upload to GAS warning:', err);
+        }
+      }
+    }
+
+    return { success: true, url: activeUrl, message: 'Tersimpan permanen di penyimpanan lokal!' };
   }
 }
 

@@ -1,6 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import fs from 'fs';
 import {defineConfig, Plugin} from 'vite';
 
 function gasProxyPlugin(): Plugin {
@@ -153,6 +154,85 @@ function gasProxyPlugin(): Plugin {
           res.end(text);
         } catch (err: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+
+      // Server-side persistent branding asset storage (survives any browser reload & multi-device visits)
+      server.middlewares.use('/api/upload-branding', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.writeHead(405, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Method not allowed' }));
+          return;
+        }
+
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            const { type, dataUrl } = parsed; // type: 'logo' | 'background'
+            if (!type || !dataUrl) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: 'type dan dataUrl diperlukan' }));
+              return;
+            }
+
+            const uploadsDir = path.resolve(__dirname, 'public/uploads');
+            if (!fs.existsSync(uploadsDir)) {
+              fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+
+            // Parse base64
+            const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+            const ext = type === 'logo' ? 'png' : 'jpg';
+            const filename = type === 'logo' ? `logo.${ext}` : `bg.${ext}`;
+            const filePath = path.join(uploadsDir, filename);
+
+            if (matches && matches[2]) {
+              const buffer = Buffer.from(matches[2], 'base64');
+              fs.writeFileSync(filePath, buffer);
+            }
+
+            // Update branding.json
+            const brandingJsonPath = path.join(uploadsDir, 'branding.json');
+            let branding: any = {};
+            if (fs.existsSync(brandingJsonPath)) {
+              try {
+                branding = JSON.parse(fs.readFileSync(brandingJsonPath, 'utf-8'));
+              } catch {}
+            }
+
+            const assetUrl = `/uploads/${filename}?v=${Date.now()}`;
+            if (type === 'logo') {
+              branding.logo_url = assetUrl;
+            } else {
+              branding.background_image_url = assetUrl;
+            }
+            fs.writeFileSync(brandingJsonPath, JSON.stringify(branding, null, 2), 'utf-8');
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, url: assetUrl, type }));
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          }
+        });
+      });
+
+      server.middlewares.use('/api/get-branding', (req, res) => {
+        try {
+          const brandingJsonPath = path.resolve(__dirname, 'public/uploads/branding.json');
+          if (fs.existsSync(brandingJsonPath)) {
+            const content = fs.readFileSync(brandingJsonPath, 'utf-8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, branding: JSON.parse(content) }));
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, branding: null }));
+        } catch (err: any) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: err.message }));
         }
       });

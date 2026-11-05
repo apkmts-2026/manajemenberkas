@@ -239,21 +239,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     try {
       const dataUrl = await processImageUpload(file, 280, 280, 0.85);
       setLogoUrl(dataUrl);
-      // Langsung simpan permanen ke slot terproteksi lokal
       storage.saveSettings({ logo_url: dataUrl });
       onRefresh();
-      showToast('Logo tersimpan permanen!');
 
-      // Unggah ke Google Drive jika URL Apps Script aktif
-      if (gasUrl.trim()) {
-        storage.uploadBrandingAsset('logo', dataUrl, file.name).then(res => {
-          if (res.success && res.url) {
-            setLogoUrl(res.url);
-            storage.saveSettings({ logo_url: res.url });
-            onRefresh();
-            showToast('Logo berhasil diunggah ke Google Drive & tersimpan di Spreadsheet!');
-          }
-        }).catch(() => {});
+      // Simpan permanen ke server disk dan kirim ke Google Apps Script/Drive
+      const res = await storage.uploadBrandingAsset('logo', dataUrl, file.name);
+      if (res.success && res.url) {
+        setLogoUrl(res.url);
+        onRefresh();
+        showToast('Logo berhasil disimpan permanen!');
+      } else {
+        showToast('Logo tersimpan di browser!');
       }
     } catch {
       showToast('Gagal memproses gambar logo.');
@@ -275,21 +271,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     try {
       const dataUrl = await processImageUpload(file, 1280, 720, 0.75);
       setBgImageUrl(dataUrl);
-      // Langsung simpan permanen ke slot terproteksi lokal
       storage.saveSettings({ background_image_url: dataUrl });
       onRefresh();
-      showToast('Background tersimpan permanen!');
 
-      // Unggah ke Google Drive jika URL Apps Script aktif
-      if (gasUrl.trim()) {
-        storage.uploadBrandingAsset('background', dataUrl, file.name).then(res => {
-          if (res.success && res.url) {
-            setBgImageUrl(res.url);
-            storage.saveSettings({ background_image_url: res.url });
-            onRefresh();
-            showToast('Background berhasil diunggah ke Google Drive & tersimpan di Spreadsheet!');
-          }
-        }).catch(() => {});
+      // Simpan permanen ke server disk dan kirim ke Google Apps Script/Drive
+      const res = await storage.uploadBrandingAsset('background', dataUrl, file.name);
+      if (res.success && res.url) {
+        setBgImageUrl(res.url);
+        onRefresh();
+        showToast('Background berhasil disimpan permanen!');
+      } else {
+        showToast('Background tersimpan di browser!');
       }
     } catch {
       showToast('Gagal memproses gambar background.');

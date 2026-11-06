@@ -7,7 +7,6 @@ import {
   Info, 
   FileDown, 
   Shield, 
-  Code2, 
   Calendar,
   CheckCircle2,
   X,
@@ -27,7 +26,7 @@ interface DashboardProps {
   menus: MenuItem[];
   onSelectMenu: (menu: MenuItem) => void;
   onOpenAdmin: () => void;
-  onOpenGasHub: () => void;
+  onOpenGasHub?: () => void;
   isAdminLoggedIn: boolean;
 }
 
@@ -36,7 +35,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   menus,
   onSelectMenu,
   onOpenAdmin,
-  onOpenGasHub,
   isAdminLoggedIn
 }) => {
   const [activeMenuDropdown, setActiveMenuDropdown] = useState<string | null>(null);
@@ -125,30 +123,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <School className="w-5 h-5 text-[#1b4332]" />
           </button>
 
-          {/* Center Navigation Shortcuts */}
-          <div className="flex items-center gap-1.5 sm:gap-2 bg-white/50 backdrop-blur-md p-1 rounded-full border border-emerald-900/10">
-            <button
-              onClick={onOpenAdmin}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all flex items-center gap-1.5 ${
-                isAdminLoggedIn 
-                  ? 'bg-emerald-900 text-white shadow-sm' 
-                  : 'text-emerald-900 hover:bg-white/80'
-              }`}
-              title="Panel Administrasi"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>{isAdminLoggedIn ? 'Admin Aktif' : 'Login Admin'}</span>
-            </button>
-
-            <button
-              onClick={onOpenGasHub}
-              className="text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-full text-emerald-900 hover:bg-white/80 transition-all flex items-center gap-1"
-              title="Lihat Kode Google Apps Script & Deployment"
-            >
-              <Code2 className="w-3.5 h-3.5 text-emerald-800" />
-              <span className="hidden sm:inline">Kode GAS</span>
-            </button>
-          </div>
+          {/* Center: Tombol Admin */}
+          <button
+            onClick={onOpenAdmin}
+            className={`text-xs font-semibold px-3.5 sm:px-4 py-2 rounded-full backdrop-blur-md transition-all flex items-center gap-1.5 shadow-xs hover:scale-105 active:scale-95 cursor-pointer ${
+              isAdminLoggedIn 
+                ? 'bg-[#1b4332] text-white shadow-sm' 
+                : 'bg-white/70 hover:bg-white text-[#1b4332] border border-emerald-900/15'
+            }`}
+            title="Panel Administrasi"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>{isAdminLoggedIn ? 'Admin Aktif' : 'Login Admin'}</span>
+          </button>
 
           {/* Right: Share Button */}
           <button 

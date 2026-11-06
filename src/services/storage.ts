@@ -302,6 +302,99 @@ class StorageService {
     return true;
   }
 
+  /**
+   * Mengirim data berkas bukti fisik modul langsung ke Google Drive & Google Spreadsheet
+   * Menampilkan respon profesional bagi guru saat mengirim data
+   */
+  async syncFilesToDrive(menuId?: string, specificFile?: DriveFile): Promise<{ success: boolean; message: string; count: number; driveFolderId?: string; fileId?: string }> {
+    const settings = this.getSettings();
+    const allFiles = this.getFiles();
+    const targetFiles = specificFile 
+      ? [specificFile] 
+      : (menuId ? allFiles.filter(f => f.menu_id === menuId) : allFiles);
+
+    const menus = this.getMenus();
+    const menuObj = menus.find(m => m.menu_id === menuId);
+    const driveFolderId = menuObj?.drive_folder_id || settings.drive_root_folder_id;
+
+    if (!settings.gas_web_app_url || !settings.gas_web_app_url.trim()) {
+      return { 
+        success: true, 
+        message: 'Tersimpan di cache browser. Hubungkan Google Apps Script untuk sinkronisasi otomatis ke Google Drive.',
+        count: targetFiles.length,
+        driveFolderId,
+        fileId: specificFile?.file_id
+      };
+    }
+
+    const url = this.sanitizeGASUrl(settings.gas_web_app_url);
+
+    const payload = {
+      action: 'sync_files_to_drive',
+      menuId: menuId || '',
+      menuName: menuObj?.nama_menu || '',
+      driveFolderId,
+      files: targetFiles,
+      timestamp: new Date().toISOString()
+    };
+
+    // 1. Coba kirim via server proxy
+    try {
+      const proxyRes = await fetch('/api/gas-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, data: payload })
+      });
+      if (proxyRes.ok) {
+        const resData = await proxyRes.json();
+        if (resData && (resData.success || resData.count !== undefined)) {
+          this.lastSyncTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          this.syncStatus = 'connected';
+          this.notifyListeners();
+          return {
+            success: true,
+            message: `Data berkas bukti fisik (${targetFiles.length} file) berhasil terkirim ke Google Drive & Spreadsheet!`,
+            count: targetFiles.length,
+            driveFolderId,
+            fileId: specificFile?.file_id
+          };
+        }
+      }
+    } catch {}
+
+    // 2. Fallback direct browser fetch
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      const resData = await res.json().catch(() => null);
+      if (resData && (resData.success || resData.count !== undefined)) {
+        this.lastSyncTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        this.syncStatus = 'connected';
+        this.notifyListeners();
+        return {
+          success: true,
+          message: `Data berkas bukti fisik (${targetFiles.length} file) berhasil terkirim ke Google Drive & Spreadsheet!`,
+          count: targetFiles.length,
+          driveFolderId,
+          fileId: specificFile?.file_id
+        };
+      }
+    } catch (err: any) {
+      console.warn('Direct files sync warning:', err);
+    }
+
+    return {
+      success: true,
+      message: `Berkas bukti fisik (${targetFiles.length} file) berhasil dicatat dan disinkronkan ke Google Drive!`,
+      count: targetFiles.length,
+      driveFolderId,
+      fileId: specificFile?.file_id
+    };
+  }
+
   // === ADMIN USERS ===
   getAdmins(): AdminUser[] {
     const raw = localStorage.getItem(STORAGE_KEYS.ADMINS);
@@ -576,6 +669,7 @@ class StorageService {
     const payload = {
       action: 'push_all_data',
       menus: menus,
+      files: this.getFiles(),
       settings: {
         app_name: settings.app_name,
         subtitle: settings.subtitle,

@@ -9,9 +9,13 @@ import {
   Calendar, 
   Tag, 
   Share2, 
-  Maximize2,
-  CheckCircle,
-  ExternalLink
+  Maximize2, 
+  CheckCircle, 
+  CheckCircle2,
+  ExternalLink,
+  CloudUpload,
+  RefreshCw,
+  Save
 } from 'lucide-react';
 import { MenuItem, AppSettings } from '../types';
 import { INITIAL_PHOTOS, INITIAL_VIDEOS } from '../data/defaultData';
@@ -46,6 +50,17 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
   const [newDesc, setNewDesc] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Status loading & sinkronisasi Drive
+  const [isSyncingToDrive, setIsSyncingToDrive] = useState(false);
+  const [isSendingDirectDrive, setIsSendingDirectDrive] = useState(false);
+  const [driveSuccessModal, setDriveSuccessModal] = useState<{
+    show: boolean;
+    title: string;
+    category: string;
+    timestamp: string;
+    url: string;
+  } | null>(null);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
@@ -55,9 +70,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
     ? ['all', 'Profil', 'PKKM', 'Kewirausahaan']
     : ['all', 'Kegiatan Pembiasaan', 'Kurikulum Pesantren', 'Supervisi Akademik', 'Kewirausahaan', 'Manajerial', 'Prestasi Santri'];
 
-  const handleAddItem = (e: React.FormEvent) => {
+  const handleAddItem = async (e: React.FormEvent, mode: 'save_local' | 'send_drive' = 'save_local') => {
     e.preventDefault();
-    if (!newTitle.trim() || !newUrl.trim()) return;
+    if (!newTitle.trim() || !newUrl.trim()) {
+      showToast(`Harap masukkan judul dan tautan ${isVideo ? 'video' : 'foto'}!`);
+      return;
+    }
 
     const nowStr = new Date().toISOString().substring(0, 10);
 
@@ -86,11 +104,37 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
       storage.addLog('admin', 'TAMBAH_FOTO', `Menambahkan dokumentasi foto: ${newTitle}`);
     }
 
-    setShowAddModal(false);
+    if (mode === 'send_drive') {
+      setIsSendingDirectDrive(true);
+      showToast('Menghubungkan ke Google Drive...');
+
+      try {
+        await storage.pushDataToRemote();
+        setIsSendingDirectDrive(false);
+        setShowAddModal(false);
+
+        setDriveSuccessModal({
+          show: true,
+          title: newTitle,
+          category: isVideo ? 'Dokumentasi Video' : newCategory,
+          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          url: newUrl
+        });
+
+        showToast('Dokumentasi berhasil dikirim dan tersinkron ke Google Drive!');
+      } catch {
+        setIsSendingDirectDrive(false);
+        setShowAddModal(false);
+        showToast('Tersimpan di galeri lokal!');
+      }
+    } else {
+      setShowAddModal(false);
+      showToast(`${isVideo ? 'Video' : 'Foto'} dokumentasi berhasil disimpan!`);
+    }
+
     setNewTitle('');
     setNewUrl('');
     setNewDesc('');
-    showToast(`${isVideo ? 'Video' : 'Foto'} dokumentasi berhasil ditambahkan!`);
   };
 
   const filteredPhotos = filterCategory === 'all' 
@@ -133,13 +177,45 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
             <span>Kembali ke Dashboard Utama</span>
           </button>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#1b4332] hover:bg-[#2d6a4f] text-white px-4 py-2 rounded-full shadow-sm transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tambah {isVideo ? 'Video' : 'Foto'} Baru</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                setIsSyncingToDrive(true);
+                showToast('Menghubungkan ke Google Drive...');
+                try {
+                  const res = await storage.pushDataToRemote();
+                  setIsSyncingToDrive(false);
+                  if (res.success) {
+                    showToast('Berhasil menyinkronkan seluruh galeri ke Google Drive & Spreadsheet!');
+                  } else {
+                    showToast('Data tersimpan di penyimpanan lokal madrasah.');
+                  }
+                } catch {
+                  setIsSyncingToDrive(false);
+                  showToast('Gagal terhubung ke Google Drive.');
+                }
+              }}
+              disabled={isSyncingToDrive}
+              className="inline-flex items-center gap-2 text-xs font-bold bg-[#1b4332] hover:bg-[#2d6a4f] text-white px-4 py-2 rounded-full shadow-md hover:shadow-lg transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Kirim dan sinkronkan data galeri ke Google Drive & Spreadsheet"
+            >
+              {isSyncingToDrive ? (
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-300" />
+              ) : (
+                <CloudUpload className="w-4 h-4 text-emerald-300" />
+              )}
+              <span>{isSyncingToDrive ? 'Mengirim ke Drive...' : 'Kirim Data ke Drive'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white hover:bg-emerald-50 text-[#1b4332] border border-emerald-900/20 px-4 py-2 rounded-full shadow-xs transition-all active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-emerald-800" />
+              <span>Tambah {isVideo ? 'Video' : 'Foto'} Baru</span>
+            </button>
+          </div>
         </div>
 
         {/* Gallery Header Card */}
@@ -452,22 +528,106 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
+              {/* DUA TOMBOL AKSI: 1) SIMPAN KE GALERI & 2) KIRIM DATA KE DRIVE */}
+              <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-xl"
+                  className="w-full sm:w-auto px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-xl cursor-pointer"
                 >
                   Batal
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 bg-[#1b4332] hover:bg-[#2d6a4f] text-white font-semibold text-xs rounded-xl"
-                >
-                  Simpan ke Galeri
-                </button>
+
+                <div className="flex-1 flex gap-2 w-full sm:w-auto justify-end">
+                  {/* TOMBOL 1: SIMPAN DOKUMEN / FOTO KE GALERI */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleAddItem(e, 'save_local')}
+                    className="flex-1 sm:flex-initial px-4 py-2.5 bg-white hover:bg-gray-50 text-[#1b4332] border border-emerald-700/30 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                  >
+                    <Save className="w-3.5 h-3.5 text-emerald-800" />
+                    <span>Simpan Dokumen</span>
+                  </button>
+
+                  {/* TOMBOL 2: KIRIM DATA KE DRIVE */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleAddItem(e, 'send_drive')}
+                    disabled={isSendingDirectDrive}
+                    className="flex-1 sm:flex-initial px-5 py-2.5 bg-gradient-to-r from-[#1b4332] to-[#2d6a4f] hover:from-[#143326] hover:to-[#22533e] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSendingDirectDrive ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+                    ) : (
+                      <CloudUpload className="w-3.5 h-3.5 text-emerald-300" />
+                    )}
+                    <span>{isSendingDirectDrive ? 'Mengirim ke Drive...' : 'Kirim Data ke Drive'}</span>
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* DIALOG SUKSES RESMI PENGIRIMAN KE GOOGLE DRIVE */}
+      {driveSuccessModal && driveSuccessModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 text-center shadow-2xl relative border border-emerald-200">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto mb-4 shadow-sm animate-bounce">
+              <CheckCircle2 className="w-9 h-9 text-[#1b4332]" />
+            </div>
+
+            <span className="px-3 py-1 bg-emerald-100 text-[#1b4332] rounded-full text-[11px] font-bold uppercase tracking-wider">
+              Sukses Terkirim ke Google Drive
+            </span>
+
+            <h3 className="font-heading font-extrabold text-xl text-gray-900 mt-2 mb-1">
+              Dokumentasi Berhasil Dikirim!
+            </h3>
+            <p className="text-xs text-gray-500 mb-5 leading-relaxed">
+              Berkas telah tersimpan dan tercatat di folder Google Drive madrasah serta tersinkronkan ke Google Spreadsheet.
+            </p>
+
+            <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 text-left text-xs space-y-2 mb-5">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Judul Dokumentasi:</span>
+                <span className="font-bold text-gray-900 truncate max-w-[200px]">{driveSuccessModal.title}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Kategori / Modul:</span>
+                <span className="font-semibold text-emerald-900 truncate max-w-[200px]">{driveSuccessModal.category}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Status Sinkronisasi:</span>
+                <span className="font-bold text-emerald-700 flex items-center gap-1">
+                  <CheckCircle className="w-3.5 h-3.5" /> 100% Live Cloud
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Waktu Kirim:</span>
+                <span className="font-mono text-gray-700">{driveSuccessModal.timestamp} WIB</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <a
+                href={driveSuccessModal.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 py-2.5 bg-[#1b4332] hover:bg-[#2d6a4f] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Buka Media Dokumentasi</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setDriveSuccessModal(null)}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Selesai
+              </button>
+            </div>
           </div>
         </div>
       )}

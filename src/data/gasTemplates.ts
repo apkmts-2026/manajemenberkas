@@ -65,8 +65,11 @@ function doPost(e) {
     var action = payload.action;
 
     if (action === 'push_all_data' || action === 'sync_all') {
-      var res = syncAllDataToSpreadsheet(payload.menus, payload.settings);
+      var res = syncAllDataToSpreadsheet(payload.menus, payload.settings, payload.files);
       response = { success: true, count: res.count, timestamp: getCurrentTimestamp() };
+    } else if (action === 'sync_files_to_drive' || action === 'save_files') {
+      var resFiles = syncFilesToSpreadsheet(payload.files, payload.menuId, payload.driveFolderId);
+      response = { success: true, count: resFiles.count, timestamp: getCurrentTimestamp() };
     } else if (action === 'save_menu') {
       var saved = createMenu(payload.sessionToken || 'SYSTEM', payload.menuData);
       response = { success: true, data: saved };
@@ -184,7 +187,7 @@ function autoInitIfEmpty() {
 /**
  * Menyinkronkan seluruh menu dan pengaturan dari web app ke Google Spreadsheet
  */
-function syncAllDataToSpreadsheet(menus, settings) {
+function syncAllDataToSpreadsheet(menus, settings, files) {
   var ss = getSpreadsheet();
   autoInitIfEmpty();
 
@@ -258,7 +261,53 @@ function syncAllDataToSpreadsheet(menus, settings) {
     }
   }
 
+  if (files && Array.isArray(files) && files.length > 0) {
+    syncFilesToSpreadsheet(files);
+  }
+
   return { success: true, count: menus ? menus.length : 0 };
+}
+
+/**
+ * Menyimpan atau memperbarui data berkas bukti fisik ke sheet FILE_DRIVE
+ */
+function syncFilesToSpreadsheet(files, menuId, driveFolderId) {
+  try {
+    var ss = getSpreadsheet();
+    autoInitIfEmpty();
+    var sheetFiles = ss.getSheetByName(CONFIG.SHEETS.FILE_DRIVE);
+    if (!sheetFiles) return { success: false, count: 0 };
+
+    if (files && Array.isArray(files) && files.length > 0) {
+      var now = getCurrentTimestamp();
+      var rows = [];
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        rows.push([
+          f.file_id || ('DF-' + Utilities.getUuid().substring(0, 8)),
+          f.nama_file || '',
+          f.jenis_file || 'doc',
+          f.drive_file_id || '',
+          f.drive_folder_id || driveFolderId || '',
+          f.url_file || '',
+          f.menu_id || menuId || '',
+          f.keterangan || '',
+          f.status || 'aktif',
+          f.created_at || now,
+          f.created_by || 'GURU'
+        ]);
+      }
+      if (rows.length > 0) {
+        // Append rows to sheet
+        sheetFiles.getRange(sheetFiles.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+      }
+      return { success: true, count: files.length };
+    }
+    return { success: true, count: 0 };
+  } catch (err) {
+    Logger.log('syncFilesToSpreadsheet error: ' + err.toString());
+    return { success: false, error: err.toString() };
+  }
 }
 
 /**

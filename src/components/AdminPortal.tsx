@@ -639,14 +639,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </button>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+          <div className="mt-6 pt-4 border-t border-gray-100 text-center space-y-2.5">
             <button
               onClick={onBackToPortal}
-              className="text-xs font-semibold text-gray-500 hover:text-gray-800 flex items-center justify-center gap-1.5 mx-auto"
+              className="text-xs font-semibold text-gray-500 hover:text-gray-800 flex items-center justify-center gap-1.5 mx-auto cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Kembali ke Dashboard Utama</span>
             </button>
+            <p className="text-[10px] text-gray-400 font-medium">
+              by mas broe ish4k
+            </p>
           </div>
         </div>
       </div>
@@ -1944,6 +1947,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Footnote */}
+        <div className="text-center text-gray-400 text-[10.5px] pt-8 pb-4 font-medium">
+          by mas broe ish4k
+        </div>
       </main>
 
       {/* MODAL TAMBAH / EDIT MENU */}

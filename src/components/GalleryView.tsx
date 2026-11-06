@@ -351,6 +351,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
             ))}
           </div>
         )}
+
+        {/* Footnote */}
+        <div className="text-center text-[#20553f] text-[10.5px] pb-6 pt-4 opacity-80 font-medium">
+          by mas broe ish4k
+        </div>
       </div>
 
       {/* Photo Lightbox Modal */}

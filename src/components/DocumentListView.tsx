@@ -386,6 +386,11 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
             </div>
           )}
         </div>
+        
+        {/* Footnote */}
+        <div className="text-center text-[#20553f] text-[10.5px] pb-6 opacity-80 font-medium">
+          by mas broe ish4k
+        </div>
       </div>
 
       {/* File Preview Modal */}

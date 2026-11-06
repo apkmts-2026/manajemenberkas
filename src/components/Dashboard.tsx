@@ -342,9 +342,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
         </div>
 
-        {/* Footer Text */}
-        <div className="text-center text-[#20553f] text-[11px] leading-relaxed">
+        {/* Footer Text & Footnote */}
+        <div className="text-center text-[#20553f] text-[11px] leading-relaxed space-y-1 pb-4">
           <p>{settings.footer_text}</p>
+          <p className="text-[10.5px] text-[#20553f]/80 font-medium tracking-wide">
+            by mas broe ish4k
+          </p>
         </div>
       </div>
 

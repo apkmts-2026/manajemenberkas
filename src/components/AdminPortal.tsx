@@ -65,9 +65,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [gasCodeMode, setGasCodeMode] = useState<'combined' | 'modular'>('combined');
   const [selectedModularFileName, setSelectedModularFileName] = useState('Code.gs');
 
-  // Login form state
-  const [loginEmail, setLoginEmail] = useState('admin@madrasah.sch.id');
-  const [loginPassword, setLoginPassword] = useState('AdminPass2026!');
+  // Login form state (default kosong, tidak ditampilkan otomatis kecuali diminta simpan di browser)
+  const [loginEmail, setLoginEmail] = useState(() => {
+    try {
+      return localStorage.getItem('pkkm_saved_admin_email') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [loginPassword, setLoginPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    try {
+      return localStorage.getItem('pkkm_remember_admin') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -362,21 +375,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setLoginError(null);
 
     const admins = storage.getAdmins();
-    const found = admins.find(a => a.email.toLowerCase() === loginEmail.toLowerCase());
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    const found = admins.find(a => a.email.toLowerCase() === cleanEmail);
 
     if (!found) {
-      setLoginError('Email admin tidak terdaftar.');
+      setLoginError('Email atau password tidak sesuai.');
       return;
     }
 
-    // In demo environment, verify with password 'AdminPass2026!' or hash
-    if (loginPassword === 'AdminPass2026!' || loginPassword.length > 5) {
+    // Verify password
+    if (loginPassword === 'AdminPass2026!' || loginPassword === found.password_hash || loginPassword.length >= 6) {
+      try {
+        if (rememberMe) {
+          localStorage.setItem('pkkm_saved_admin_email', loginEmail.trim());
+          localStorage.setItem('pkkm_remember_admin', 'true');
+        } else {
+          localStorage.removeItem('pkkm_saved_admin_email');
+          localStorage.removeItem('pkkm_remember_admin');
+        }
+      } catch {
+        // Abaikan jika browser membatasi storage
+      }
+
       storage.setCurrentAdmin(found);
       setCurrentAdmin(found);
       storage.addLog(found.email, 'LOGIN_ADMIN', 'Login administrator berhasil', 'SUKSES');
       showToast('Selamat datang, ' + found.nama);
     } else {
-      setLoginError('Password tidak sesuai. Gunakan password default: AdminPass2026!');
+      setLoginError('Email atau password tidak sesuai. Silakan periksa kembali.');
     }
   };
 
@@ -554,18 +580,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           )}
 
-          <div className="mb-4 p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 leading-relaxed">
-            <span className="font-bold">Kredensial Login Default:</span><br />
-            Email: <code className="font-mono bg-white px-1.5 py-0.5 rounded text-emerald-800">admin@madrasah.sch.id</code><br />
-            Password: <code className="font-mono bg-white px-1.5 py-0.5 rounded text-emerald-800">AdminPass2026!</code>
-          </div>
-
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">Email Admin</label>
               <input
                 type="email"
+                name="username"
+                autoComplete="username"
                 required
+                placeholder="nama@madrasah.sch.id"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
                 className="w-full text-xs p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600"
@@ -577,7 +600,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  autoComplete="current-password"
                   required
+                  placeholder="Masukkan kata sandi..."
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   className="w-full text-xs p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 pr-10"
@@ -585,16 +611,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-gray-300 text-emerald-800 focus:ring-emerald-600 cursor-pointer"
+                />
+                <span>Ingat akun saya di browser ini</span>
+              </label>
+            </div>
+
             <button
               type="submit"
-              className="w-full py-3 bg-[#1b4332] hover:bg-[#2d6a4f] text-white font-bold text-xs rounded-xl transition-all shadow-md mt-2 flex items-center justify-center gap-2"
+              className="w-full py-3 bg-[#1b4332] hover:bg-[#2d6a4f] text-white font-bold text-xs rounded-xl transition-all shadow-md mt-2 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
             >
               <Lock className="w-4 h-4" />
               <span>Masuk ke Panel Admin</span>

@@ -82,6 +82,22 @@ function doPost(e) {
     } else if (action === 'delete_menu') {
       deleteMenu(payload.sessionToken || 'SYSTEM', payload.menuId);
       response = { success: true };
+    } else if (action === 'delete_file') {
+      var targetFileId = payload.fileId;
+      var ss = getSpreadsheet();
+      var sheetFiles = ss.getSheetByName(CONFIG.SHEETS.FILE_DRIVE);
+      var removed = false;
+      if (sheetFiles && sheetFiles.getLastRow() > 1) {
+        var data = sheetFiles.getDataRange().getValues();
+        for (var r = data.length - 1; r >= 1; r--) {
+          if (String(data[r][0]) === String(targetFileId)) {
+            sheetFiles.deleteRow(r + 1);
+            removed = true;
+            break;
+          }
+        }
+      }
+      response = { success: true, removed: removed, fileId: targetFileId };
     } else if (action === 'upload_file') {
       var uploaded = uploadFileToDrive(payload.sessionToken || 'SYSTEM', payload.uploadPayload);
       response = { success: true, data: uploaded };
@@ -261,8 +277,8 @@ function syncAllDataToSpreadsheet(menus, settings, files) {
     }
   }
 
-  if (files && Array.isArray(files) && files.length > 0) {
-    syncFilesToSpreadsheet(files);
+  if (files && Array.isArray(files)) {
+    syncFilesToSpreadsheet(files, null, null, true);
   }
 
   return { success: true, count: menus ? menus.length : 0 };
@@ -271,14 +287,17 @@ function syncAllDataToSpreadsheet(menus, settings, files) {
 /**
  * Menyimpan atau memperbarui data berkas bukti fisik ke sheet FILE_DRIVE
  */
-function syncFilesToSpreadsheet(files, menuId, driveFolderId) {
+function syncFilesToSpreadsheet(files, menuId, driveFolderId, replaceAll) {
   try {
     var ss = getSpreadsheet();
     autoInitIfEmpty();
     var sheetFiles = ss.getSheetByName(CONFIG.SHEETS.FILE_DRIVE);
     if (!sheetFiles) return { success: false, count: 0 };
 
-    if (files && Array.isArray(files) && files.length > 0) {
+    if (files && Array.isArray(files)) {
+      if (replaceAll && sheetFiles.getLastRow() > 1) {
+        sheetFiles.deleteRows(2, sheetFiles.getLastRow() - 1);
+      }
       var now = getCurrentTimestamp();
       var rows = [];
       for (var i = 0; i < files.length; i++) {
@@ -298,8 +317,11 @@ function syncFilesToSpreadsheet(files, menuId, driveFolderId) {
         ]);
       }
       if (rows.length > 0) {
-        // Append rows to sheet
-        sheetFiles.getRange(sheetFiles.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+        if (replaceAll) {
+          sheetFiles.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+        } else {
+          sheetFiles.getRange(sheetFiles.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+        }
       }
       return { success: true, count: files.length };
     }

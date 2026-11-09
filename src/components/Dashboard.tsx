@@ -182,8 +182,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               type="button"
               onClick={async () => {
+                showToast('Menghubungi Google Drive & Spreadsheet...');
+                await storage.loadAppDataFromServer();
                 if (settings.gas_web_app_url) {
-                  showToast('Menghubungi Google Drive & Spreadsheet...');
                   const ok = await storage.syncWithRemote();
                   if (ok) {
                     showToast('Data berhasil diperbarui dari Google Drive!');
@@ -191,7 +192,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     showToast('Sinkronisasi selesai (menggunakan data terbaru).');
                   }
                 } else {
-                  showToast('Mode Cloud Multi-Perangkat siap! Atur URL di menu Admin.');
+                  showToast('Data berhasil disinkronkan!');
                 }
               }}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/75 hover:bg-white text-[#1b4332] text-xs font-semibold shadow-xs border border-emerald-900/10 transition-all hover:scale-102 cursor-pointer"

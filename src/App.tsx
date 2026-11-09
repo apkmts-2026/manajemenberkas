@@ -45,6 +45,7 @@ export default function App() {
 
     // Automatically load server-persisted branding and remote cloud sync on load
     storage.loadBrandingFromServer();
+    storage.loadAppDataFromServer();
     storage.syncWithRemote();
 
     return () => {

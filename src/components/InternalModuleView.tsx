@@ -22,7 +22,8 @@ import {
   UserCheck,
   ShieldCheck,
   FolderCheck,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Trash2
 } from 'lucide-react';
 import { MenuItem, AppSettings, DriveFile } from '../types';
 import { storage } from '../services/storage';
@@ -368,6 +369,21 @@ export const InternalModuleView: React.FC<InternalModuleViewProps> = ({
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>
+                  {isAdminLoggedIn && (
+                    <button
+                      onClick={async () => {
+                        if (window.confirm(`Hapus berkas "${file.nama_file}"? Penghapusan akan langsung disinkronkan ke seluruh browser & Google Spreadsheet.`)) {
+                          await storage.deleteFile(file.file_id);
+                          setFiles(storage.getFilesByMenu(menu.menu_id));
+                          showToast(`Berkas "${file.nama_file}" berhasil dihapus.`);
+                        }
+                      }}
+                      className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      title="Hapus Berkas (Admin)"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

@@ -16,7 +16,8 @@ import {
   Folder,
   Upload,
   Link2,
-  Share2
+  Share2,
+  Trash2
 } from 'lucide-react';
 import { MenuItem, AppSettings, DriveFile } from '../types';
 import { storage } from '../services/storage';
@@ -375,6 +376,21 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                 >
                   <ExternalLink className="w-4 h-4" />
                 </a>
+                {isAdminLoggedIn && (
+                  <button
+                    onClick={async () => {
+                      if (window.confirm(`Hapus dokumen "${file.nama_file}"? Perubahan akan langsung disinkronkan ke seluruh browser & Google Spreadsheet.`)) {
+                        await storage.deleteFile(file.file_id);
+                        setFiles(storage.getFilesByMenu(menu.menu_id));
+                        showToast(`Dokumen "${file.nama_file}" berhasil dihapus.`);
+                      }
+                    }}
+                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                    title="Hapus Dokumen (Admin)"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           ))}

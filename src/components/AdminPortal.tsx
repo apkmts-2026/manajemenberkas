@@ -100,6 +100,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   // Delete Confirm Modal
   const [menuToDelete, setMenuToDelete] = useState<MenuItem | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<DriveFile | null>(null);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
 
   // Identity Form State
   const [appName, setAppName] = useState(settings.app_name);
@@ -1178,13 +1180,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         <td className="py-3 px-3 text-gray-400 text-[11px]">{file.ukuran || '2.0 MB'}</td>
                         <td className="py-3 px-3 text-right">
                           <button
-                            onClick={() => {
-                              storage.deleteFile(file.file_id);
-                              showToast(`Berkas ${file.nama_file} dilepas.`);
-                              onRefresh();
-                            }}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
-                            title="Hapus Kaitan Berkas"
+                            type="button"
+                            onClick={() => setFileToDelete(file)}
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                            title="Hapus Kaitan Berkas & Sinkronkan"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -2135,6 +2134,55 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl"
               >
                 Ya, Hapus Menu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE FILE MODAL */}
+      {fileToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-rose-100 text-center">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="font-heading font-bold text-base text-gray-900 mb-1">
+              Konfirmasi Hapus Berkas
+            </h3>
+            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+              Apakah Anda yakin ingin menghapus berkas <strong className="text-gray-800">"{fileToDelete.nama_file}"</strong>? 
+              Penghapusan akan langsung disinkronkan ke Google Spreadsheet dan browser lainnya.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={isDeletingFile}
+                onClick={() => setFileToDelete(null)}
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingFile}
+                onClick={async () => {
+                  setIsDeletingFile(true);
+                  showToast('Menghapus berkas dan menyinkronkan ke Google Spreadsheet & semua perangkat...');
+                  try {
+                    await storage.deleteFile(fileToDelete.file_id);
+                    showToast(`Berkas "${fileToDelete.nama_file}" berhasil dihapus dari semua perangkat!`);
+                  } catch {
+                    showToast('Berkas dihapus dari penyimpanan lokal.');
+                  }
+                  setIsDeletingFile(false);
+                  setFileToDelete(null);
+                  onRefresh();
+                }}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isDeletingFile ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>{isDeletingFile ? 'Menghapus...' : 'Ya, Hapus Berkas'}</span>
               </button>
             </div>
           </div>

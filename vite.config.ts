@@ -220,17 +220,51 @@ function gasProxyPlugin(): Plugin {
         });
       });
 
-      server.middlewares.use('/api/get-branding', (req, res) => {
+      server.middlewares.use('/api/app-data', async (req, res) => {
+        const appDataJsonPath = path.resolve(__dirname, 'public/uploads/app-data.json');
+        const uploadsDir = path.resolve(__dirname, 'public/uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const parsed = JSON.parse(body || '{}');
+              let existing: any = {};
+              if (fs.existsSync(appDataJsonPath)) {
+                try {
+                  existing = JSON.parse(fs.readFileSync(appDataJsonPath, 'utf-8'));
+                } catch {}
+              }
+              const updated = {
+                ...existing,
+                ...parsed,
+                updated_at: new Date().toISOString()
+              };
+              fs.writeFileSync(appDataJsonPath, JSON.stringify(updated, null, 2), 'utf-8');
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, message: 'Data berhasil disimpan di server' }));
+            } catch (err: any) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // GET method
         try {
-          const brandingJsonPath = path.resolve(__dirname, 'public/uploads/branding.json');
-          if (fs.existsSync(brandingJsonPath)) {
-            const content = fs.readFileSync(brandingJsonPath, 'utf-8');
+          if (fs.existsSync(appDataJsonPath)) {
+            const content = fs.readFileSync(appDataJsonPath, 'utf-8');
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, branding: JSON.parse(content) }));
+            res.end(JSON.stringify({ success: true, data: JSON.parse(content) }));
             return;
           }
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, branding: null }));
+          res.end(JSON.stringify({ success: false, data: null }));
         } catch (err: any) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: err.message }));

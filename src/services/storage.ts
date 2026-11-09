@@ -163,6 +163,36 @@ class StorageService {
     } catch {}
   }
 
+  /**
+   * Menarik data menu dan berkas terbaru yang tersimpan di server
+   * Menjamin multi-browser dan multi-perangkat langsung mendapatkan data yang sama
+   */
+  async loadAppDataFromServer(): Promise<void> {
+    try {
+      const res = await fetch('/api/app-data');
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.success && json.data) {
+          const { files, menus } = json.data;
+          let changed = false;
+          if (Array.isArray(files)) {
+            localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify(files));
+            changed = true;
+          }
+          if (Array.isArray(menus) && menus.length > 0) {
+            localStorage.setItem(STORAGE_KEYS.MENUS, JSON.stringify(menus));
+            changed = true;
+          }
+          if (changed) {
+            this.notifyListeners();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('loadAppDataFromServer error:', err);
+    }
+  }
+
   // === MENUS ===
   getMenus(): MenuItem[] {
     const raw = localStorage.getItem(STORAGE_KEYS.MENUS);
@@ -185,6 +215,14 @@ class StorageService {
   saveAllMenus(menus: MenuItem[]): void {
     localStorage.setItem(STORAGE_KEYS.MENUS, JSON.stringify(menus));
     this.notifyListeners();
+    // Simpan ke server agar browser lain langsung mendapatkan perubahan
+    try {
+      fetch('/api/app-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ menus })
+      }).catch(() => {});
+    } catch {}
     // Otomatis sinkronkan perubahan menu ke Google Spreadsheet di background
     this.pushDataToRemote().catch(() => {});
   }
@@ -278,6 +316,21 @@ class StorageService {
     return this.getFiles().filter(f => f.menu_id === menuId && f.status === 'aktif');
   }
 
+  saveAllFiles(files: DriveFile[]): void {
+    localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify(files));
+    this.notifyListeners();
+    // Simpan ke server agar browser lain langsung mendapatkan perubahan
+    try {
+      fetch('/api/app-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files })
+      }).catch(() => {});
+    } catch {}
+    // Otomatis sinkronkan daftar berkas terbaru ke Google Spreadsheet
+    this.pushDataToRemote().catch(() => {});
+  }
+
   addFile(file: Omit<DriveFile, 'file_id' | 'created_at'>): DriveFile {
     const files = this.getFiles();
     const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -287,18 +340,43 @@ class StorageService {
       created_at: now
     };
     files.unshift(newFile);
-    localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify(files));
+    this.saveAllFiles(files);
     this.addLog(file.created_by, 'UPLOAD_FILE_DRIVE', `Mengunggah berkas ${file.nama_file}`);
-    this.notifyListeners();
     return newFile;
   }
 
-  deleteFile(fileId: string): boolean {
+  async deleteFile(fileId: string): Promise<boolean> {
     const files = this.getFiles();
+    const target = files.find(f => f.file_id === fileId);
     const updated = files.filter(f => f.file_id !== fileId);
-    localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify(updated));
-    this.addLog('admin', 'HAPUS_FILE', `Menghapus relasi berkas ID ${fileId}`);
-    this.notifyListeners();
+    
+    // 1. Simpan perubahan ke localStorage & server lokal secara instan
+    this.saveAllFiles(updated);
+    this.addLog('admin', 'HAPUS_FILE', `Menghapus relasi berkas: ${target ? target.nama_file : fileId}`);
+
+    // 2. Hubungi Google Apps Script untuk menghapus data di Google Spreadsheet
+    const settings = this.getSettings();
+    if (settings.gas_web_app_url && settings.gas_web_app_url.trim()) {
+      const url = this.sanitizeGASUrl(settings.gas_web_app_url);
+      try {
+        await fetch('/api/gas-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url,
+            data: {
+              action: 'delete_file',
+              fileId
+            }
+          })
+        });
+      } catch (err) {
+        console.warn('delete_file remote error:', err);
+      }
+      // 3. Dorong ulang seluruh file aktif ke Google Spreadsheet agar 100% konsisten
+      await this.pushDataToRemote().catch(() => {});
+    }
+
     return true;
   }
 
@@ -819,8 +897,15 @@ class StorageService {
           localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
         } catch {}
       }
-      if (remoteData.files && Array.isArray(remoteData.files) && remoteData.files.length > 0) {
+      if (remoteData.files && Array.isArray(remoteData.files)) {
         localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify(remoteData.files));
+        try {
+          fetch('/api/app-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: remoteData.files })
+          }).catch(() => {});
+        } catch {}
       }
       this.syncStatus = 'connected';
       this.lastSyncTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
